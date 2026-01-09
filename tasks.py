@@ -5,7 +5,7 @@ from dateutil import parser
 from db_config import (
     REDIS_URL, STRAPI_TOKEN, STRAPI_ACCOUNT, 
     STRAPI_CONVERSATION, STRAPI_CONVERSATION_MEMBER,
-    STRAPI_MESSAGE, STRAPI_PLATFORM, STRAPI_CUSTOMER
+    STRAPI_MESSAGE, STRAPI_PLATFORM, STRAPI_CUSTOMER,ZALO_ACCESS_TOKEN, TELEGRAM_BOT_TOKEN
 )
 
 HEADERS_STRAPI = {"Authorization": STRAPI_TOKEN, "Content-Type": "application/json"}
@@ -35,7 +35,7 @@ def upsert_record(endpoint, filters, data):
 
 @app.task(name="tasks.new_msg")
 def process_message(data):
-    # 0. Khai báo các ID nghiệp vụ từ n8n
+
     p_id = str(data.get("platform_id"))
     u_id = str(data.get("platform_user_id") or data.get("sender_id"))
     acc_id = str(data.get("account_id"))
@@ -98,3 +98,47 @@ def process_message(data):
     }
     requests.post(STRAPI_MESSAGE, json={"data": message_payload}, headers=HEADERS_STRAPI)
     print(f"✅ Đã xử lý xong tin nhắn: {data.get('platform_msg_id')}")
+    
+# --- TASK GỬI ZALO ---   
+@app.task(name="tasks.send_zalo")
+def send_zalo_msg(data):
+    print("Gửi Zalo:", data)
+    headers = {"access_token": ZALO_ACCESS_TOKEN, "Content-Type": "application/json"}
+    url = None
+    payload = {}
+    if data.get("type").strip() == 'private':
+        url = "https://openapi.zalo.me/v3.0/oa/message/cs"
+        payload = {
+            "recipient": {"user_id": data.get("user_id") },
+            "message": {"text": data.get("content")}
+        }
+    elif data.get("type").strip() == "supergroup":  
+        url = "https://openapi.zalo.me/v3.0/oa/group/message"
+        payload = {
+            "recipient": {"group_id": data.get("group_id")},
+            "message": {"text": data.get("content")}
+        }
+    print(url)
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        result = response.json()
+        return {"platform": "Zalo", "status": "success", "response": result}
+    except Exception as e:
+        return {"platform": "Zalo", "status": "error", "message": str(e)}
+
+
+# --- TASK GỬI TELEGRAM ---
+@app.task(name="tasks.send_tele")
+def send_tele_msg(data):
+    print("Gửi Telegram:", data)
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": data.get("group_id") if data.get("type").strip() in ["supergroup", "group"] else data.get("user_id"),
+        "text": data.get("content"),
+    }
+    try:
+        response = requests.post(url, json=payload)
+        result = response.json()
+        print(result)
+    except Exception as e:
+        return {"platform": "Telegram", "status": "error", "message": str(e)}
