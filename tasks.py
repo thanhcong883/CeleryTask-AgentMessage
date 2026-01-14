@@ -81,7 +81,7 @@ def process_message(data):
         config.STRAPI_CONVERSATION_MEMBER,
         {"customer": st_cus_id, "conversation": st_conv_id},
         {
-            "role": data.get("role") or "admin",
+            "role": data.get("role") ,
             "customer": st_cus_id,
             "conversation": st_conv_id,
         }
