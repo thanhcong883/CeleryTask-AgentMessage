@@ -13,8 +13,9 @@ class TelegramProvider:
 
 class ZaloProvider:
     def send(self, data):
+        print("Gửi tin nhắn Zalo với dữ liệu:", data)
         conf = config.PLATFORMS["7"]
-        is_private = data.get("type") == "private"
+        is_private = data.get("type").strip() == "private"
         url = conf["private_url"] if is_private else conf["group_url"]
         headers = {"access_token": conf["token"]}
         payload = {

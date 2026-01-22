@@ -17,11 +17,12 @@ def format_datetime(time_val):
 def update_message_platform(platform, data, result):    
     mess_id = data.get("message_id")
     update_payload = {}
+    print(result)
     if mess_id:
         if platform == "8":
             update_payload = {
                 "message_id": mess_id,           
-                "platform_msg_id": str(result['result']['chat']['id']),    
+                "platform_msg_id": str(result['result']['message_id']),    
                 "content": result['result']['text'],
                 "datetime": format_datetime(result['result']['date']),
                 "message_status": "sent"
@@ -35,4 +36,5 @@ def update_message_platform(platform, data, result):
                 "datetime": format_datetime(data.get("sent_time")),
                 "message_status": "sent"
             }
+
             return update_payload
