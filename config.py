@@ -19,7 +19,7 @@ STRAPI_UPDATE_MESSAGE = "http://localhost:1337/api/agent-chat-box/webhook/messag
 STRAPI_SYNC_MESSAGE = "http://localhost:1337/api/agent-chat-box/webhook/sync-message"
 STRAPI_GET_CONVERSATION = "http://localhost:1337/api/agent-chat-box/webhook/conversation"
 STRAPI_GET_HISTORY_MESSAGE = "http://localhost:1337/api/agent-chat-box/webhook/conversation/{conversation_id}/messages?mess_id={message_id}"
-
+STRAPI_SAVE_MESSAGE_BOT_SENT = "http://localhost:1337/api/agent-chat-box/webhook/bot-reply"
 # N8N Configuration
 N8N_AGENT_WEBHOOK = "https://agent-dev.data.irsocial.vn/webhook/2e346872-f386-4168-a7fb-220025a4e13b"
 CHECK_QUESTION_API = "https://agent-dev.data.irsocial.vn/webhook/5ccc728b-fc10-4ee5-9753-adf5ecca503f"
@@ -32,7 +32,8 @@ HEADERS_STRAPI = {
 
 HEADERS_API_BACKEND = {
     "Content-Type": "application/json",
-    "x-webhook-secret": "k7P2mR9vX4"
+    "x-webhook-secret": "k7P2mR9vX4",
+    "Authorization": STRAPI_TOKEN
 }
 
 # Platform Configurations
