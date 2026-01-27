@@ -1,34 +1,30 @@
-
 from celery import Celery
 import requests
 
 from provider import PROVIDERS
 import config
-from update_message import update_message_platform, format_datetime
+from update_message import update_message_platform
 
 app = Celery('my_app', broker=config.REDIS_URL)
 
 
-def update_mess(platform, data, result):
-    update_payload = update_message_platform(platform, data, result)
-    update_res = requests.put(config.STRAPI_UPDATE_MESSAGE, json=update_payload, headers=config.HEADERS_API_BACKEND)
-    print(f"Cập nhật Strapi ID {data.get('message_id')}: {update_res.status_code}")
-
-
 def handle_send_message(data, callback=None):
-    print("Gửi tin nhắn với dữ liệu:", data)
     platform = data.get("platform_id")
+    if not platform:
+        print("ERROR: Platform ID missing.")
+        return
+
     providers = PROVIDERS.get(platform)
     if not providers:
-        print(f"Nền tảng {platform} chưa được hỗ trợ.")
+        print(f"ERROR: Platform {platform} not supported.")
         return
+
     try:
         result = providers.send(data)
-        print(f"Kết quả từ {platform}:", result)
         if callback:
             callback(platform, data, result)
     except Exception as e:
-        print(f"Lỗi hệ thống: {str(e)}")
+        print(f"ERROR: Failed to send message for {platform}: {e}")
 
 
 @app.task(name="task.agent_message", queue="celery_agent_message")
@@ -40,24 +36,18 @@ def check_agent_answer(data):
         message_id=message_id
     )
 
-    history_res = requests.get(history_url, headers=config.HEADERS_API_BACKEND)
-    if history_res.status_code != 200:
-        print("❌ Không lấy được lịch sử tin nhắn")
+    try:
+        history_res = requests.get(history_url, headers=config.HEADERS_API_BACKEND)
+        history_res.raise_for_status()
+        history = history_res.json().get("data", [])
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Failed to get message history: {e}")
         return
-    history = history_res.json().get("data", [])
 
     agent_payload = {
         "question": data.get("content"),
-        "history_chat": [
-            {
-                "role": msg.get("sender_type"),
-                "content": msg.get("content"),
-                "datetime": msg.get("datetime")
-            }
-            for msg in history
-        ]
+        "history_chat": [{"role": msg.get("sender_type"), "content": msg.get("content"), "datetime": msg.get("datetime")} for msg in history]
     }
-    print(f"📨 Payload gửi agent: {agent_payload}")
 
     try:
         agent_res = requests.post(
@@ -66,80 +56,135 @@ def check_agent_answer(data):
             headers={"Content-Type": "application/json"},
             timeout=10
         )
-        print(f"🤖 Đã gửi agent: {agent_res.status_code}")
-    except Exception as e:
-        print(f"❌ Lỗi gọi agent: {str(e)}")
+        agent_res.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Agent call failed: {e}")
+        return
 
     if agent_res.json().get("output") == "false":
-        send_admin = {
-            "type":"group",
-            "group_id":data.get("group_id"),
-            "content": "admin oi, có tin nhắn chưa được xử lý từ khách hàng",
+        send_admin_payload = {
+            "type": "group",
+            "group_id": data.get("group_id"),
+            "content": data.get("bot_message"),
             "platform_id": data.get("platform_id"),
             "platform_conv_id": data.get("platform_conv_id")
         }
-        bot_send_message.apply_async(
-            args=[send_admin],
-            queue="celery_bot_send_message"
+        send_message.apply_async(
+            args=[send_admin_payload, data],
+            queue="celery_send_message"
         )
-
-
-@app.task(name="tasks.bot_send_message", queue="celery_bot_send_message")
-def bot_send_message(data):
-    def on_success(platform, message_data, send_result):
-        data_bot_sent = {
-                "sender_type": "bot",
-                "sender_id": "",
-                "platform_msg_id":"",
-                "content": "admin oi, có tin nhắn chưa được xử lý từ khách hàng",
-                "datetime": "",
-                "platform_conv_id": message_data.get("platform_conv_id"),
-                "message_status" : "sent"
-        }
-        print(f"🔍 Data Bot Sent: {data_bot_sent}")
-        res_bot_sent = requests.post(config.STRAPI_SAVE_MESSAGE_BOT_SENT, json=data_bot_sent, headers=config.HEADERS_API_BACKEND)
-        print(f"🔍 Res Bot Sent: {res_bot_sent.text}")
-    handle_send_message(data, callback=on_success)
 
 
 @app.task(name="tasks.new_msg", queue="celery_receive_message")
 def process_message(data):
-    res_noti = requests.post(config.STRAPI_SYNC_MESSAGE, json=data, headers=config.HEADERS_API_BACKEND)
-    if res_noti.status_code in [200, 201]:
-            print(f"✅ Sync to Agent thành công: {res_noti.text}")
+    try:
+        res_noti = requests.post(config.STRAPI_SYNC_MESSAGE, json=data, headers=config.HEADERS_API_BACKEND)
+        res_noti.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Sync to Agent failed: {e}")
+        return
+
+    try:
+        noti_data = res_noti.json().get('data', [])
+        conversation_id = noti_data[0].get('data', {}).get('conversationId') if noti_data else None
+        message_id = noti_data[0].get('data', {}).get('messageId') if noti_data else None
+
+        if not (conversation_id and message_id):
+            print("ERROR: Missing conversationId or messageId in sync notification response.")
+            return
+
+    except (ValueError, IndexError):
+        print("ERROR: Failed to parse JSON or access data from sync notification response.")
+        return
+
+    res_member_url = config.STRAPI_GET_CONVERSATION_MEMBER.format(conversation_id=conversation_id)
+    try:
+        res_member = requests.get(res_member_url, headers=config.HEADERS_API_BACKEND)
+        res_member.raise_for_status()
+        member = res_member.json().get("data", [])
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Failed to retrieve members: {e}")
+        return
+    except ValueError:
+        print("ERROR: Failed to parse JSON from member retrieval response.")
+        return
+
+    role_app = next(
+        (m.get("role_app") for m in member if m.get("customer", {}).get("platform_user_id") == data.get("platform_user_id")),
+        None
+    )
+
+    if role_app == "admin":
+        return
     else:
-            print(f"⚠️ Sync to Agent thất bại: {res_noti.text}")
+        url = f"{config.STRAPI_GET_CONVERSATION}/{conversation_id}"
+        try:
+            res_inf = requests.get(url, headers=config.HEADERS_API_BACKEND)
+            res_inf.raise_for_status()
+            conversation_info = res_inf.json().get("data", {})
+            use_agent = conversation_info.get("use_agent")
+            time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
+            bot_message = conversation_info.get("bot_message", "")
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Failed to retrieve conversation info: {e}")
+            return
+        except ValueError:
+            print("ERROR: Failed to parse JSON from conversation info response.")
+            return
 
-    conversation_id = res_noti.json()['data'][0]['data']['conversationId']
-    message_id = res_noti.json()['data'][0]['data']['messageId']
+        data_check = {
+            "conversation": conversation_id,
+            "message_id": message_id,
+            "time_to_use_agent": time_to_use_agent,
+            "content": data.get("content"),
+            "type": data.get("type"),
+            "platform_conv_id": data.get("platform_conv_id"),
+            "group_id": data.get("platform_conv_id"),
+            "user_id": data.get("platform_user_id"),
+            "platform_id": data.get("platform_id"),
+            "bot_message": bot_message
+        }
 
-    url = f"{config.STRAPI_GET_CONVERSATION}/{conversation_id}"
-    res_inf = requests.get(url, headers=config.HEADERS_API_BACKEND)
-    use_agent = res_inf.json().get("data", {}).get("use_agent")
-    data_check = {
-        "conversation": conversation_id,
-        "message_id": message_id,
-        "time_to_use_agent": res_inf.json().get("data", {}).get("time_to_use_agent", 0),
-        "content": data.get("content"),
-        "type": data.get("type"),
-        "platform_conv_id": data.get("platform_conv_id"),
-        "group_id": data.get("platform_conv_id"),
-        "user_id": data.get("platform_user_id"),
-        "platform_id": data.get("platform_id")
-    }
-
-    print(f"Sử dụng agent: {use_agent}")
-
-    if use_agent == True:
-        check_question = requests.post(config.CHECK_QUESTION_API, json={"content": data.get("content")}, headers={"Content-Type": "application/json"})
-        print(f"Kết quả kiểm tra câu hỏi: {check_question.text}")
-        if check_question.json().get("output") == "true" and data.get("sender_type") == "customer":
-           check_agent_answer.apply_async(
-                args=[data_check],
-                countdown=int(data_check["time_to_use_agent"])
-                )
+        if use_agent and data.get("sender_type") == "customer":
+            try:
+                check_question_res = requests.post(config.CHECK_QUESTION_API, json={"content": data.get("content")}, headers={"Content-Type": "application/json"})
+                check_question_res.raise_for_status()
+                if check_question_res.json().get("output") == "true":
+                    check_agent_answer.apply_async(
+                        args=[data_check],
+                        countdown=int(time_to_use_agent)
+                    )
+            except requests.exceptions.RequestException as e:
+                print(f"ERROR: Failed to check question or call agent: {e}")
+            except ValueError:
+                print("ERROR: Failed to parse JSON from question check response.")
 
 
 @app.task(name="tasks.send_message", queue="celery_send_message")
-def send_message(data):
-    handle_send_message(data, callback=update_mess)
+def send_message(data, data_check=None): # data_check added for bot message context
+    def on_success_callback(platform, message_data, send_result):
+        # Logic for updating message platform
+        update_payload = update_message_platform(platform, message_data, send_result)
+        try:
+            update_res = requests.put(config.STRAPI_UPDATE_MESSAGE, json=update_payload, headers=config.HEADERS_API_BACKEND)
+            update_res.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Failed to update Strapi ID {message_data.get('message_id')}: {e}")
+
+        # Logic for saving bot-sent message, if data_check is provided
+        if data_check:
+            data_bot_sent = {
+                "sender_type": "bot",
+                "sender_id": "",
+                "platform_msg_id": update_payload.get("platform_msg_id"),
+                "content": data_check.get("bot_message"),
+                "datetime": update_payload.get("datetime"),
+                "platform_conv_id": message_data.get("platform_conv_id"),
+                "message_status": "sent"
+            }
+            try:
+                res_bot_sent = requests.post(config.STRAPI_SAVE_MESSAGE_BOT_SENT, json=data_bot_sent, headers=config.HEADERS_API_BACKEND)
+                res_bot_sent.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                print(f"ERROR: Failed to save bot message: {e}")
+    handle_send_message(data, callback=on_success_callback)

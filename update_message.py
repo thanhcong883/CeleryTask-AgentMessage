@@ -14,27 +14,24 @@ def format_datetime(time_val):
         except Exception:
             return datetime.now().isoformat()
         
-def update_message_platform(platform, data, result):    
+def update_message_platform(platform, data, result):
+    update_payload = {"message_status": "sent"}
+    
     mess_id = data.get("message_id")
-    update_payload = {}
-    print(result)
     if mess_id:
-        if platform == "8":
-            update_payload = {
-                "message_id": mess_id,           
-                "platform_msg_id": str(result['result']['message_id']),    
-                "content": result['result']['text'],
-                "datetime": format_datetime(result['result']['date']),
-                "message_status": "sent"
-            }
-            return update_payload
-        elif platform == "7":
-            update_payload = {
-                "message_id": mess_id,           
-                "platform_msg_id": str(result['data']['message_id']), 
-                "content": data.get("content"),
-                "datetime": format_datetime(data.get("sent_time")),
-                "message_status": "sent"
-            }
+        update_payload["message_id"] = mess_id
 
-            return update_payload
+    if platform == "8":
+        update_payload.update({
+            "platform_msg_id": str(result.get('result', {}).get('message_id')),
+            "content": result.get('result', {}).get('text'),
+            "datetime": format_datetime(result.get('result', {}).get('date'))
+        })
+    elif platform == "7":
+        update_payload.update({
+            "platform_msg_id": str(result.get('data', {}).get('message_id')),
+            "content": data.get("content"),
+            "datetime": format_datetime(data.get("sent_time"))
+        })
+    
+    return update_payload
