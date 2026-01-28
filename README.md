@@ -40,3 +40,23 @@ Platform_message -> n8n -> redis -> celery(task) -> db
 - Celery sẽ đọc data ở redis rồi bắt đầu lưu vào DB. Đầu tiên lưu bảng **Customer**, nếu đã tồn tại **"platform_user_id"** trùng với **"platform_user_id"** đã nhận thì bỏ qua không lưu. Tương tự đối với các bảng tiếp theo là 
 ```
 Account -> Conversation -> Conversation Member -> Message
+```
+
+### Luồng Agent Task
+
+Luồng này xử lý việc tự động kiểm tra và phản hồi tin nhắn sử dụng Agent AI.
+
+1. **Kiểm tra và kích hoạt:**
+   - Khi nhận tin nhắn mới (`process_message`), hệ thống kiểm tra cấu hình hội thoại (`use_agent`).
+   - Nếu Agent được bật và người gửi là khách hàng:
+     - Gọi API kiểm tra câu hỏi (`CHECK_QUESTION_API`).
+     - Nếu là câu hỏi hợp lệ: Lập lịch task `check_agent_answer` với thời gian trễ được cấu hình (`time_to_use_agent`).
+
+2. **Xử lý logic Agent (`check_agent_answer`):**
+   - Task chạy sau khoảng thời gian delay.
+   - Lấy toàn bộ lịch sử tin nhắn của hội thoại từ Strapi.
+   - Gửi nội dung câu hỏi và lịch sử chat tới Webhook Agent (`N8N_AGENT_WEBHOOK`) để xử lý.
+   - **Xử lý phản hồi từ Agent:**
+     - Nếu Agent trả về kết quả `output: "false"` (tức là Agent không tự trả lời được hoặc quyết định chuyển tiếp):
+       - Hệ thống sẽ kích hoạt task gửi tin nhắn (`send_message`) đến nhóm quản trị (Group Admin).
+       - Nội dung tin nhắn gửi đi là nội dung cấu hình sẵn (`bot_message`) kèm theo thông tin ngữ cảnh.

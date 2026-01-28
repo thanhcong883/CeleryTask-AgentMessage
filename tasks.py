@@ -89,75 +89,83 @@ def process_message(data):
         conversation_id = noti_data[0].get('data', {}).get('conversationId') if noti_data else None
         message_id = noti_data[0].get('data', {}).get('messageId') if noti_data else None
 
-        if not (conversation_id and message_id):
-            print("ERROR: Missing conversationId or messageId in sync notification response.")
-            return
-
     except (ValueError, IndexError):
         print("ERROR: Failed to parse JSON or access data from sync notification response.")
         return
 
     res_member_url = config.STRAPI_GET_CONVERSATION_MEMBER.format(conversation_id=conversation_id)
+    res_conversation_url = f"{config.STRAPI_GET_CONVERSATION}/{conversation_id}"
     try:
-        res_member = requests.get(res_member_url, headers=config.HEADERS_API_BACKEND)
-        res_member.raise_for_status()
-        member = res_member.json().get("data", [])
+        res_inf = requests.get(res_conversation_url, headers=config.HEADERS_API_BACKEND)
+        res_inf.raise_for_status()
+        conversation_info = res_inf.json().get("data", {})
+        use_agent = conversation_info.get("use_agent")
     except requests.exceptions.RequestException as e:
-        print(f"ERROR: Failed to retrieve members: {e}")
+        print(f"ERROR: Failed to retrieve conversation info: {e}")
         return
     except ValueError:
-        print("ERROR: Failed to parse JSON from member retrieval response.")
+        print("ERROR: Failed to parse JSON from conversation info response.")
         return
-
-    role_app = next(
-        (m.get("role_app") for m in member if m.get("customer", {}).get("platform_user_id") == data.get("platform_user_id")),
-        None
-    )
-
-    if role_app == "admin":
-        return
-    else:
-        url = f"{config.STRAPI_GET_CONVERSATION}/{conversation_id}"
+    if use_agent:
         try:
-            res_inf = requests.get(url, headers=config.HEADERS_API_BACKEND)
-            res_inf.raise_for_status()
-            conversation_info = res_inf.json().get("data", {})
-            use_agent = conversation_info.get("use_agent")
-            time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
-            bot_message = conversation_info.get("bot_message", "")
+            res_member = requests.get(res_member_url, headers=config.HEADERS_API_BACKEND)
+            res_member.raise_for_status()
+            member = res_member.json().get("data", [])
         except requests.exceptions.RequestException as e:
-            print(f"ERROR: Failed to retrieve conversation info: {e}")
+            print(f"ERROR: Failed to retrieve members: {e}")
             return
         except ValueError:
-            print("ERROR: Failed to parse JSON from conversation info response.")
+            print("ERROR: Failed to parse JSON from member retrieval response.")
             return
 
-        data_check = {
-            "conversation": conversation_id,
-            "message_id": message_id,
-            "time_to_use_agent": time_to_use_agent,
-            "content": data.get("content"),
-            "type": data.get("type"),
-            "platform_conv_id": data.get("platform_conv_id"),
-            "group_id": data.get("platform_conv_id"),
-            "user_id": data.get("platform_user_id"),
-            "platform_id": data.get("platform_id"),
-            "bot_message": bot_message
-        }
+        role_app = next(
+            (m.get("role_app") for m in member if m.get("customer", {}).get("platform_user_id") == data.get("platform_user_id")),
+            None
+        )
 
-        if use_agent and data.get("sender_type") == "customer":
+        if role_app == "admin":
+            return
+        else:
+            
             try:
-                check_question_res = requests.post(config.CHECK_QUESTION_API, json={"content": data.get("content")}, headers={"Content-Type": "application/json"})
-                check_question_res.raise_for_status()
-                if check_question_res.json().get("output") == "true":
-                    check_agent_answer.apply_async(
-                        args=[data_check],
-                        countdown=int(time_to_use_agent)
-                    )
+                time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
+                bot_message = conversation_info.get("bot_message", "")
             except requests.exceptions.RequestException as e:
-                print(f"ERROR: Failed to check question or call agent: {e}")
+                print(f"ERROR: Failed to retrieve conversation info: {e}")
+                return
             except ValueError:
-                print("ERROR: Failed to parse JSON from question check response.")
+                print("ERROR: Failed to parse JSON from conversation info response.")
+                return
+
+            data_check = {
+                "conversation": conversation_id,
+                "message_id": message_id,
+                "time_to_use_agent": time_to_use_agent,
+                "content": data.get("content"),
+                "type": data.get("type"),
+                "platform_conv_id": data.get("platform_conv_id"),
+                "group_id": data.get("platform_conv_id"),
+                "user_id": data.get("platform_user_id"),
+                "platform_id": data.get("platform_id"),
+                "bot_message": bot_message
+            }
+
+            if data.get("sender_type") == "customer":
+                try:
+                    check_question_res = requests.post(config.CHECK_QUESTION_API, json={"content": data.get("content")}, headers={"Content-Type": "application/json"})
+                    check_question_res.raise_for_status()
+                    if check_question_res.json().get("output") == "true":
+                        check_agent_answer.apply_async(
+                            args=[data_check],
+                            countdown=int(time_to_use_agent)
+                        )
+                except requests.exceptions.RequestException as e:
+                    print(f"ERROR: Failed to check question or call agent: {e}")
+                except ValueError:
+                    print("ERROR: Failed to parse JSON from question check response.")
+
+    else:
+        return
 
 
 @app.task(name="tasks.send_message", queue="celery_send_message")
