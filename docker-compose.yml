@@ -1,37 +1,112 @@
-version: '3.8'
-
 services:
   redis:
-    image: redis:latest
+    image: redis:7-alpine
     container_name: redis_broker
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - celery_network
 
-  celery_worker:
+  celery_worker_receive:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery --app=tasks worker --loglevel=info -P solo
+    container_name: celery_worker_receive
+    command: celery --app=tasks worker --loglevel=info -Q celery_receive_message --concurrency=2
     volumes:
       - .:/app
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     env_file:
       - .env
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+  celery_worker_send:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: celery_worker_send
+    command: celery --app=tasks worker --loglevel=info -Q celery_send_message --concurrency=2
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+  celery_worker_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: celery_worker_agent
+    command: celery --app=tasks worker --loglevel=info -Q celery_agent_message --concurrency=2
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - celery_network
 
   celery_beat:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: celery_beat
     command: celery -A tasks beat --loglevel=info --scheduler celery.beat.PersistentScheduler
     volumes:
       - .:/app
+      - celery_beat_data:/app/celerybeat-schedule
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     env_file:
       - .env
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: celery_flower
+    command: celery -A tasks flower --port=5555
+    ports:
+      - "5555:5555"
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - celery_network
 
 volumes:
   redis_data:
+  celery_beat_data:
+
+networks:
+  celery_network:
+    driver: bridge
