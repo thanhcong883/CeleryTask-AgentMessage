@@ -1,15 +1,19 @@
 import requests
 import config
 
+
 class TelegramProvider:
     def send(self, data):
         conf = config.PLATFORMS["8"]
         url = conf["url"].format(token=conf["token"])
         payload = {
-            "chat_id": data.get("group_id") if data.get("type") in ["group", "supergroup"] else data.get("user_id"),
+            "chat_id": data.get("group_id")
+            if data.get("type") in ["group", "supergroup"]
+            else data.get("user_id"),
             "text": data.get("content"),
         }
-        return requests.post(url, json=payload).json()
+        return requests.post(url, json=payload, timeout=10).json()
+
 
 class ZaloProvider:
     def send(self, data):
@@ -19,13 +23,14 @@ class ZaloProvider:
         url = conf["private_url"] if is_private else conf["group_url"]
         headers = {"access_token": conf["token"]}
         payload = {
-            "recipient": {"user_id" if is_private else "group_id": data.get("user_id" if is_private else "group_id")},
-            "message": {"text": data.get("content")}
+            "recipient": {
+                "user_id" if is_private else "group_id": data.get(
+                    "user_id" if is_private else "group_id"
+                )
+            },
+            "message": {"text": data.get("content")},
         }
-        return requests.post(url, json=payload, headers=headers).json()
+        return requests.post(url, json=payload, headers=headers, timeout=10).json()
 
 
-PROVIDERS = {
-    "8": TelegramProvider(),
-    "7": ZaloProvider()
-}
+PROVIDERS = {"8": TelegramProvider(), "7": ZaloProvider()}
