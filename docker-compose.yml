@@ -84,25 +84,7 @@ services:
     networks:
       - celery_network
 
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: celery_flower
-    command: celery -A tasks flower --port=5555
-    ports:
-      - "5555:5555"
-    volumes:
-      - .:/app
-    depends_on:
-      redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - celery_network
-
+ 
 volumes:
   redis_data:
   celery_beat_data:networks:

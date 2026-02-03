@@ -4,7 +4,7 @@ import config
 
 class TelegramProvider:
     def send(self, data):
-        conf = config.PLATFORMS["8"]
+        conf = config.PLATFORMS["1"]
         url = conf["url"].format(token=conf["token"])
         payload = {
             "chat_id": data.get("group_id")
@@ -18,7 +18,7 @@ class TelegramProvider:
 class ZaloProvider:
     def send(self, data):
         print("Gửi tin nhắn Zalo với dữ liệu:", data)
-        conf = config.PLATFORMS["7"]
+        conf = config.PLATFORMS["2"]
         is_private = data.get("type").strip() == "private"
         url = conf["private_url"] if is_private else conf["group_url"]
         headers = {"access_token": conf["token"]}
@@ -33,4 +33,4 @@ class ZaloProvider:
         return requests.post(url, json=payload, headers=headers, timeout=10).json()
 
 
-PROVIDERS = {"8": TelegramProvider(), "7": ZaloProvider()}
+PROVIDERS = {"1": TelegramProvider(), "2": ZaloProvider()}

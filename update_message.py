@@ -22,7 +22,7 @@ def update_message_platform(platform, data, result):
     if mess_id:
         update_payload["message_id"] = mess_id
 
-    if platform == "8":
+    if platform == "1":
         update_payload.update(
             {
                 "platform_msg_id": str(result.get("result", {}).get("message_id")),
