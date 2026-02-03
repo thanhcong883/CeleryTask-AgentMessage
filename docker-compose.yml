@@ -105,8 +105,6 @@ services:
 
 volumes:
   redis_data:
-  celery_beat_data:
-
-networks:
+  celery_beat_data:networks:
   celery_network:
     driver: bridge
