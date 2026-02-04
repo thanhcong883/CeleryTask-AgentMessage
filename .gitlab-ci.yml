@@ -1,0 +1,107 @@
+stages:
+  - build
+  - deploy
+  - notify_success
+  - notify_failure
+
+.build_template:
+  before_script:
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest || true
+    - docker build --cache-from $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest -t $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery -t $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery
+  after_script:
+    - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest
+    - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery
+    - docker rmi $(docker images -f "dangling=true" -q) || true
+
+build_image_dev:
+  stage: build
+  extends: .build_template
+  only:
+    - dev
+  tags:
+    - evg
+
+update-image-tag-dev:
+  needs:
+    - build_image_dev
+  stage: build
+  variables:
+    VALUE_CELERY_RECIVE: chart-dev-2026/chatbox-ai/celery-recive/values.yaml
+    VALUE_CELERY_SEND: chart-dev-2026/chatbox-ai/celery-send/values.yaml
+    VALUE_CELERY_BEAT: chart-dev-2026/chatbox-ai/celery-beat/values.yaml
+    VALUE_CELERY_AGENT: chart-dev-2026/chatbox-ai/celery-agent/values.yaml
+
+    TAG_PATH: .image.tag
+  image: alpine:latest
+  before_script:
+    - apk update
+    - apk add git yq
+    - git clone https://$CI_REGISTRY_USER:$CI_PRIVATE_TOKEN@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git
+    - cd chart-dev-2026
+    - git remote set-url origin "https://$CI_REGISTRY_USER:$CI_PRIVATE_TOKEN@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git"
+    # Configure git user
+    - git config --global user.email "van.le@evgcorp.net"
+    - git config --global user.name "GitLab CI by Van"
+    # Reset to remote prod branch
+    - git fetch
+    - git checkout main
+    - git reset --hard origin/main
+
+  script:
+    # Update YAML file
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_RECIVE
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_SEND
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_BEAT
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_AGENT
+    - git add $VALUE_CELERY_RECIVE 
+    - git add $VALUE_CELERY_SEND 
+    - git add $VALUE_CELERY_BEAT
+    - git add $VALUE_CELERY_AGENT 
+    - git commit -m "CI Deploy $TAG_PATH to $CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA"
+    - git push -o ci.skip origin HEAD:main
+
+  only:
+    - dev
+  tags:
+    - evg
+
+
+notify_success:
+  image: alpine
+  stage: notify_success
+  before_script:
+    - apk add --no-cache curl jq
+  variables:
+    CHAT_ID: "-4916051911"
+    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
+  script:
+    - |
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ ${CI_PROJECT_NAME} pipeline succeed on branch ${CI_COMMIT_REF_NAME} of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+  when: on_success
+  only:
+    - dev
+  tags:
+    - evg
+
+
+notify_failure:
+  image: alpine
+  stage: notify_failure
+  before_script:
+    - apk add --no-cache curl jq
+  variables:
+    CHAT_ID: "-4916051911"
+    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
+  script:
+    - |
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \" ❌ Project: $CI_PROJECT_NAME $JOB_NAME false on branch ${CI_COMMIT_REF_NAME} of ${CI_COMMIT_MESSAGE} \"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+  when: on_failure
+  allow_failure: false
+  only:
+    - dev
+  tags:
+    - evg
