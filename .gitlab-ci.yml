@@ -30,10 +30,10 @@ update-image-tag-dev:
     - build_image_dev
   stage: build
   variables:
-    VALUE_CELERY_RECIVE: chart-dev-2026/chatbox-ai/celery-recive/values.yaml
-    VALUE_CELERY_SEND: chart-dev-2026/chatbox-ai/celery-send/values.yaml
-    VALUE_CELERY_BEAT: chart-dev-2026/chatbox-ai/celery-beat/values.yaml
-    VALUE_CELERY_AGENT: chart-dev-2026/chatbox-ai/celery-agent/values.yaml
+    VALUE_CELERY_RECIVE: chatbox-ai/celery-recive/values.yaml
+    VALUE_CELERY_SEND: chatbox-ai/celery-send/values.yaml
+    VALUE_CELERY_BEAT: chatbox-ai/celery-beat/values.yaml
+    VALUE_CELERY_AGENT: chatbox-ai/celery-agent/values.yaml
 
     TAG_PATH: .image.tag
   image: alpine:latest
