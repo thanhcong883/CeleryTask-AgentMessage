@@ -69,6 +69,31 @@ update-image-tag-dev:
   tags:
     - evg
 
+upgrade_k8s:
+  needs:
+    - update-image-tag-dev
+  stage: deploy
+  image: alpine:latest
+  variables:
+    PATH_DIR: '/projects/chart-dev-2026/chatbox-ai'
+    PATH_CELERY_AGENT: '/projects/chart-dev-2026/chatbox-ai/celery-agent'
+    PATH_CELERY_RECIVE: '/projects/chart-dev-2026/chatbox-ai/celery-recive'
+    PATH_CELERY_SEND: '/projects/chart-dev-2026/chatbox-ai/celery-send'
+    PATH_CELERY_BEAT: '/projects/chart-dev-2026/chatbox-ai/celery-beat'
+  before_script:
+    - apk add --no-cache openssh-client
+    - chmod 600 "$SSH_KEY_K8S" || true
+  script:
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && git pull origin main"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_AGENT && hdev upgrade celery-agent . -n agent-dev"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_RECIVE && hdev upgrade celery-recive . -n agent-dev"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_SEND && hdev upgrade celery-send . -n agent-dev"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_BEAT && hdev upgrade celery-beat . -n agent-dev"
+  only:
+    - dev
+  tags:
+    - evg
+
 
 notify_success:
   image: alpine
