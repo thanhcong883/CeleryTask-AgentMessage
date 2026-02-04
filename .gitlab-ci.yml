@@ -85,10 +85,10 @@ upgrade_k8s:
     - chmod 600 "$SSH_KEY_K8S" || true
   script:
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && git pull origin main"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_AGENT && hdev upgrade celery-agent . -n agent-dev"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_RECIVE && hdev upgrade celery-recive . -n agent-dev"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_SEND && hdev upgrade celery-send . -n agent-dev"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_BEAT && hdev upgrade celery-beat . -n agent-dev"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_AGENT && bash -lc 'hdev upgrade celery-agent . -n agent-dev'"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_RECIVE && bash -lc 'hdev upgrade celery-recive . -n agent-dev'"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_SEND && bash -lc 'hdev upgrade celery-send . -n agent-dev'"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_BEAT && bash -lc 'hdev upgrade celery-beat . -n agent-dev'"
   only:
     - dev
   tags:
