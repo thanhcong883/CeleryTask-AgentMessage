@@ -40,7 +40,7 @@ update-image-tag-dev:
   before_script:
     - apk update
     - apk add git yq
-    - git clone https://${CI_REGISTRY_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git
+    - git clone https://${CI_REGISTRY_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net/devops/helm/chart-dev-2026.git
     - cd chart-dev-2026
     - git remote set-url origin "https://${CI_REGISTRY_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git"
     # Configure git user
