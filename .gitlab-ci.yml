@@ -42,9 +42,9 @@ update-image-tag-dev:
     - apk add git yq
     - echo "User is: $CI_REGISTRY_USER"
     - echo "TOKEN is: $CI_PRIVATE_TOKEN"
-    - git clone https://$CI_REGISTRY_USER:$CI_PRIVATE_TOKEN@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git
+    - git clone https://${CI_REGISTRY_USER:}${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git
     - cd chart-dev-2026
-    - git remote set-url origin "https://$CI_REGISTRY_USER:$CI_PRIVATE_TOKEN@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git"
+    - git remote set-url origin "https://${CI_REGISTRY_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net:devops/helm/chart-dev-2026.git"
     # Configure git user
     - git config --global user.email "van.le@evgcorp.net"
     - git config --global user.name "GitLab CI by Van"
