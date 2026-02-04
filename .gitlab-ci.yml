@@ -40,9 +40,9 @@ update-image-tag-dev:
   before_script:
     - apk update
     - apk add git yq
-    - git clone https://${CI_REGISTRY_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net/devops/helm/chart-dev-2026.git
+    - git clone https://${GIT_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net/devops/helm/chart-dev-2026.git
     - cd chart-dev-2026
-    - git remote set-url origin "https://${CI_REGISTRY_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net/devops/helm/chart-dev-2026.git"
+    - git remote set-url origin "https://${GIT_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net/devops/helm/chart-dev-2026.git"
     # Configure git user
     - git config --global user.email "van.le@evgcorp.net"
     - git config --global user.name "GitLab CI by Van"
@@ -61,7 +61,7 @@ update-image-tag-dev:
     - git add $VALUE_CELERY_SEND 
     - git add $VALUE_CELERY_BEAT
     - git add $VALUE_CELERY_AGENT 
-    - git commit -m "CI Deploy $TAG_PATH to $CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA"
+    - git commit -m "CI Deploy $TAG_PATH to $CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery"
     - git push -o ci.skip origin HEAD:main
 
   only:
