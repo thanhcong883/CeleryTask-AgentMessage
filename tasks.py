@@ -119,22 +119,23 @@ def _notify_admins_and_customer(data: dict) -> None:
 
     # Notify each admin conversation
     bot_sent_to = data.get("bot_sent_to", [])
-    for conversation_id in bot_sent_to:
-        conv_info = get_conversation_info(conversation_id)
-        if not conv_info:
-            continue
+    if bot_sent_to:
+        for conversation_id in bot_sent_to:
+            conv_info = get_conversation_info(conversation_id)
+            if not conv_info:
+                continue
 
-        admin_payload = {
-            "type": conv_info.get("type"),
-            "group_id": conv_info.get("platform_conv_id"),
-            "user_id": conv_info.get("platform_conv_id"),
-            "platform_conv_id": conv_info.get("platform_conv_id"),
-            "platform_id": platform_id,
-            "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
-        }
-        send_message.apply_async(
-            args=(admin_payload, admin_payload), queue="celery_send_message"
-        )
+            admin_payload = {
+                "type": conv_info.get("type"),
+                "group_id": conv_info.get("platform_conv_id"),
+                "user_id": conv_info.get("platform_conv_id"),
+                "platform_conv_id": conv_info.get("platform_conv_id"),
+                "platform_id": platform_id,
+                "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
+            }
+            send_message.apply_async(
+                args=(admin_payload, admin_payload), queue="celery_send_message"
+            )
 
     # Notify customer
     customer_payload = {
