@@ -1,5 +1,9 @@
+import logging
 import requests
 import config
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class TelegramProvider:
@@ -12,14 +16,22 @@ class TelegramProvider:
             else data.get("user_id"),
             "text": data.get("content"),
         }
-        return requests.post(url, json=payload, timeout=10).json()
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Failed to send Telegram message: {e}")
+            raise
 
 
 class ZaloProvider:
     def send(self, data):
-        print("Gửi tin nhắn Zalo với dữ liệu:", data)
+        logger.info(f"Gửi tin nhắn Zalo với dữ liệu: {data}")
         conf = config.PLATFORMS["2"]
-        is_private = data.get("type").strip() == "private"
+        # Safely handle missing or None type
+        msg_type = str(data.get("type", "")).strip()
+        is_private = msg_type == "private"
         url = conf["private_url"] if is_private else conf["group_url"]
         headers = {"access_token": conf["token"]}
         payload = {
@@ -30,7 +42,13 @@ class ZaloProvider:
             },
             "message": {"text": data.get("content")},
         }
-        return requests.post(url, json=payload, headers=headers, timeout=10).json()
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Failed to send Zalo message: {e}")
+            raise
 
 
 PROVIDERS = {"1": TelegramProvider(), "2": ZaloProvider()}

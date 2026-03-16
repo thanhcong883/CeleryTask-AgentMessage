@@ -178,6 +178,10 @@ def process_message(data: dict) -> None:
         logger.error(f"Failed to parse sync response: {e}")
         return
 
+    if not conversation_id or not message_id:
+        logger.error(f"Missing conversation_id ({conversation_id}) or message_id ({message_id}) in sync response")
+        return
+
     # Get conversation info
     conversation_info = get_conversation_info(conversation_id)
     if not conversation_info:
@@ -223,7 +227,11 @@ def _schedule_agent_check(
     if check_response.json().get("output") != "true":
         return
 
-    time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
+    try:
+        time_to_use_agent = int(conversation_info.get("time_to_use_agent") or 0)
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid time_to_use_agent '{conversation_info.get('time_to_use_agent')}'. Defaulting to 0.")
+        time_to_use_agent = 0
 
     agent_check_data = {
         "conversation": conversation_id,
