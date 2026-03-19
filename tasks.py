@@ -160,7 +160,9 @@ def process_message(data: dict) -> None:
     Args:
         data: Incoming message data from platform
     """
-    logger.info(f"Received new message: {data}")
+    safe_data = data.copy()
+    if "token" in safe_data: safe_data["token"] = "***"
+    logger.info(f"Received new message: {safe_data}")
     # Sync message to Strapi
     sync_response = sync_message(data)
     if not sync_response:
@@ -260,7 +262,10 @@ def send_message(data: dict, data_send: Optional[dict] = None) -> None:
         data_send: Optional data for bot-sent message logging
     """
 
-    logger.info(f"Sending message: {data}")
+    safe_data = data.copy()
+    if "token" in safe_data: safe_data["token"] = "***"
+    logger.info(f"Sending message: {safe_data}")
+
     def on_success_callback(
         platform: str, message_data: dict, send_result: Any
     ) -> None:
