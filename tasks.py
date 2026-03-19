@@ -49,26 +49,27 @@ def handle_send_message(
     Send message through the appropriate platform provider.
 
     Args:
-        data: Message data containing platform_id and message content
+        data: Message data containing platform_name and message content
         callback: Optional callback function to execute on success
     """
-    platform = data.get("platform_id")
-    if not platform:
-        logger.error("Platform ID missing in message data")
+    platform_name = data.get("platform_name")
+    if not platform_name:
+        logger.error("Platform name missing in message data")
         return
 
-    provider: Provider = PROVIDERS.get(platform)  # type: ignore
+    platform_name = platform_name.title()
+    provider: Provider = PROVIDERS.get(platform_name)  # type: ignore
     if not provider:
-        logger.error(f"Platform '{platform}' not supported")
+        logger.error(f"Platform '{platform_name}' not supported")
         return
 
     try:
         result = provider.send(data)
         if callback:
-            callback(platform, data, result)
-        logger.info(f"Message sent successfully via {platform}")
+            callback(platform_name, data, result)
+        logger.info(f"Message sent successfully via {platform_name}")
     except Exception as e:
-        logger.error(f"Failed to send message via {platform}: {e}")
+        logger.error(f"Failed to send message via {platform_name}: {e}")
 
 
 # =============================================================================
@@ -114,7 +115,7 @@ def check_agent_answer(data: dict) -> None:
 
 def _notify_admins_and_customer(data: dict) -> None:
     """Send notifications to admins and customer when agent cannot answer."""
-    platform_id = data.get("platform_id")
+    platform_name = data.get("platform_name")
     title = data.get("title", "")
 
     # Notify each admin conversation
@@ -130,7 +131,7 @@ def _notify_admins_and_customer(data: dict) -> None:
                 "group_id": conv_info.get("platform_conv_id"),
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
-                "platform_id": platform_id,
+                "platform_name": platform_name,
                 "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
             }
             send_message.apply_async(
@@ -142,7 +143,7 @@ def _notify_admins_and_customer(data: dict) -> None:
         "type": data.get("type"),
         "group_id": data.get("group_id"),
         "content": data.get("bot_message"),
-        "platform_id": platform_id,
+        "platform_name": platform_name,
         "platform_conv_id": data.get("platform_conv_id"),
         "user_id": data.get("user_id"),
     }
@@ -159,6 +160,7 @@ def process_message(data: dict) -> None:
     Args:
         data: Incoming message data from platform
     """
+    logger.info(f"Received new message: {data}")
     # Sync message to Strapi
     sync_response = sync_message(data)
     if not sync_response:
@@ -234,7 +236,7 @@ def _schedule_agent_check(
         "platform_conv_id": data.get("platform_conv_id"),
         "group_id": data.get("platform_conv_id"),
         "user_id": data.get("platform_user_id"),
-        "platform_id": data.get("platform_id"),
+        "platform_name": data.get("platform_name"),
         "bot_message": conversation_info.get("bot_message", ""),
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
@@ -258,6 +260,7 @@ def send_message(data: dict, data_send: Optional[dict] = None) -> None:
         data_send: Optional data for bot-sent message logging
     """
 
+    logger.info(f"Sending message: {data}")
     def on_success_callback(
         platform: str, message_data: dict, send_result: Any
     ) -> None:
