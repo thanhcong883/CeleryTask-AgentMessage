@@ -1,9 +1,11 @@
 import requests
+import config
 
 
 class TelegramProvider:
     def send(self, data):
-        url = data.get("url", "").format(token=data.get("token", ""))
+        conf = config.PLATFORMS["Telegram"]
+        url = conf["url"].format(token=data.get("token", ""))
         payload = {
             "chat_id": data.get("group_id")
             if data.get("type") in ["group", "supergroup"]
@@ -16,8 +18,9 @@ class TelegramProvider:
 class ZaloProvider:
     def send(self, data):
         print("Gửi tin nhắn Zalo với dữ liệu:", data)
+        conf = config.PLATFORMS["Zalo"]
         is_private = data.get("type").strip() == "private"
-        url = data.get("private_url") if is_private else data.get("group_url")
+        url = conf["private_url"] if is_private else conf["group_url"]
         headers = {"access_token": data.get("token")}
         payload = {
             "recipient": {

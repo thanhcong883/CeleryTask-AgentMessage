@@ -117,6 +117,7 @@ def _notify_admins_and_customer(data: dict) -> None:
     """Send notifications to admins and customer when agent cannot answer."""
     platform_name = data.get("platform_name")
     title = data.get("title", "")
+    token = data.get("token")
 
     # Notify each admin conversation
     bot_sent_to = data.get("bot_sent_to", [])
@@ -132,6 +133,7 @@ def _notify_admins_and_customer(data: dict) -> None:
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
                 "platform_name": platform_name,
+                "token": token,
                 "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
             }
             send_message.apply_async(
@@ -145,6 +147,7 @@ def _notify_admins_and_customer(data: dict) -> None:
         "content": data.get("bot_message"),
         "platform_name": platform_name,
         "platform_conv_id": data.get("platform_conv_id"),
+        "token": token,
         "user_id": data.get("user_id"),
     }
     send_message.apply_async(
@@ -240,6 +243,7 @@ def _schedule_agent_check(
         "user_id": data.get("platform_user_id"),
         "platform_name": data.get("platform_name"),
         "bot_message": conversation_info.get("bot_message", ""),
+        "token": data.get("token"),
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
     }
