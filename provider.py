@@ -33,4 +33,4 @@ class ZaloProvider:
         return requests.post(url, json=payload, headers=headers, timeout=10).json()
 
 
-PROVIDERS = {"Telegram": TelegramProvider(), "Zalo": ZaloProvider()}
+PROVIDERS = {"1": TelegramProvider(), "2": ZaloProvider()}
