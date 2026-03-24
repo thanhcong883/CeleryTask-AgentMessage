@@ -6,6 +6,7 @@ import logging
 from typing import Any, Callable, Optional, Protocol
 
 from celery import Celery
+import redis
 
 from provider import PROVIDERS
 import config
@@ -36,6 +37,8 @@ logger = logging.getLogger(__name__)
 # Initialize Celery app
 app = Celery("my_app", broker=config.REDIS_URL)
 
+# Initialize Redis Client for debouncing and state management
+redis_client = redis.from_url(config.REDIS_URL)
 
 # =============================================================================
 # Message Handlers
@@ -205,6 +208,18 @@ def process_message(data: dict) -> None:
 
     user_role = find_user_role(members, str(platform_user_id))
     if user_role == "admin":
+        # Admin responded: Lock bot for 30 minutes
+        redis_client.setex(f"admin_active:{conversation_id}", 1800, "1")
+        logger.info(f"Admin active in conversation {conversation_id}, bot paused for 30 mins.")
+        return
+
+    # Check if admin is currently active or bot is already processing a question
+    if redis_client.get(f"admin_active:{conversation_id}"):
+        logger.info(f"Skipping agent check for {conversation_id} because an admin is active.")
+        return
+
+    if redis_client.get(f"bot_processing:{conversation_id}"):
+        logger.info(f"Skipping agent check for {conversation_id} because bot is already processing a recent question.")
         return
 
     # Check if the question needs agent processing
@@ -228,6 +243,13 @@ def _schedule_agent_check(
         return
 
     time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
+
+    # Question is valid: Lock bot from answering subsequent questions for time_to_use_agent + buffer
+    # The buffer ensures that the bot has time to finish answering the first question
+    lock_time = int(time_to_use_agent) + 60
+    redis_client.setex(f"bot_processing:{conversation_id}", lock_time, "1")
+    logger.info(f"Bot processing locked for conversation {conversation_id} for {lock_time} seconds.")
+
 
     agent_check_data = {
         "conversation": conversation_id,
