@@ -12,6 +12,7 @@ class TelegramProvider:
             else data.get("user_id"),
             "text": data.get("content"),
         }
+
         return requests.post(url, json=payload, timeout=10).json()
 
 
@@ -33,4 +34,4 @@ class ZaloProvider:
         return requests.post(url, json=payload, headers=headers, timeout=10).json()
 
 
-PROVIDERS = {"1": TelegramProvider(), "2": ZaloProvider()}
+PROVIDERS = {"Telegram": TelegramProvider(), "Zalo": ZaloProvider()}

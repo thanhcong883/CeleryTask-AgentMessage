@@ -52,9 +52,10 @@ def handle_send_message(
         data: Message data containing platform_id and message content
         callback: Optional callback function to execute on success
     """
-    platform = data.get("platform_id")
+ 
+    platform = data.get("platform_name")
     if not platform:
-        logger.error("Platform ID missing in message data")
+        logger.error("Platform name missing in message data")
         return
 
     provider: Provider = PROVIDERS.get(platform)  # type: ignore
@@ -114,7 +115,7 @@ def check_agent_answer(data: dict) -> None:
 
 def _notify_admins_and_customer(data: dict) -> None:
     """Send notifications to admins and customer when agent cannot answer."""
-    platform_id = data.get("platform_id")
+    platform_name = data.get("platform_name")
     title = data.get("title", "")
     token = data.get("token")
 
@@ -144,7 +145,7 @@ def _notify_admins_and_customer(data: dict) -> None:
         "type": data.get("type"),
         "group_id": data.get("group_id"),
         "content": data.get("bot_message"),
-        "platform_id": platform_id,
+        "platform_name": platform_name,
         "platform_conv_id": data.get("platform_conv_id"),
         "token": token,
         "user_id": data.get("user_id"),
@@ -237,7 +238,7 @@ def _schedule_agent_check(
         "platform_conv_id": data.get("platform_conv_id"),
         "group_id": data.get("platform_conv_id"),
         "user_id": data.get("platform_user_id"),
-        "platform_id": data.get("platform_id"),
+        "platform_name": data.get("platform_name"),
         "bot_message": conversation_info.get("bot_message", ""),
         "token": data.get("token"),
         "title": conversation_info.get("title"),
