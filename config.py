@@ -44,14 +44,15 @@ HEADERS_API_BACKEND = {
     "Authorization": STRAPI_TOKEN,
 }
 
-
 # Platform Configurations
 PLATFORMS = {
-    "Telegram": {
+    "1": {
         "url": "https://api.telegram.org/bot{token}/sendMessage",
+        "token": os.getenv("TELEGRAM_BOT_TOKEN"),
     },
-    "Zalo": {
+    "2": {
         "private_url": "https://openapi.zalo.me/v3.0/oa/message/cs",
         "group_url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "token": os.getenv("ZALO_OA_TOKEN"),
     },
 }
