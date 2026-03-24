@@ -11,7 +11,19 @@ from requests.exceptions import RequestException
 import config
 
 # Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
+def _mask_sensitive_data(data: dict) -> dict:
+    """Mask sensitive data in dict for logging."""
+    if not isinstance(data, dict):
+        return data
+    safe_data = data.copy()
+    if "token" in safe_data: safe_data["token"] = "***"
+    return safe_data
+
 
 # Constants
 DEFAULT_TIMEOUT = 10
@@ -38,8 +50,10 @@ def api_get(
         Response object if successful, None otherwise
     """
     try:
+        logger.info(f"API Request (GET): {url}")
         response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
+        logger.info(f"API Response (GET): {url} - Status: {response.status_code}")
         return response
     except RequestException as e:
         logger.error(f"GET request failed for {url}: {e}")
@@ -65,8 +79,10 @@ def api_post(
         Response object if successful, None otherwise
     """
     try:
+        logger.info(f"API Request (POST): {url} - Data: {_mask_sensitive_data(json_data)}")
         response = requests.post(url, json=json_data, headers=headers, timeout=timeout)
         response.raise_for_status()
+        logger.info(f"API Response (POST): {url} - Status: {response.status_code}")
         return response
     except RequestException as e:
         logger.error(f"POST request failed for {url}: {e}")
@@ -92,8 +108,10 @@ def api_put(
         Response object if successful, None otherwise
     """
     try:
+        logger.info(f"API Request (PUT): {url} - Data: {_mask_sensitive_data(json_data)}")
         response = requests.put(url, json=json_data, headers=headers, timeout=timeout)
         response.raise_for_status()
+        logger.info(f"API Response (PUT): {url} - Status: {response.status_code}")
         return response
     except RequestException as e:
         logger.error(f"PUT request failed for {url}: {e}")
