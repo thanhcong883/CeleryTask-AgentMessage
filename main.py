@@ -200,6 +200,25 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error during startup: {e}")
 
+@app.get("/api/bots", tags=["Bots"], summary="List all configured bots")
+async def list_bots():
+    """Retrieves a list of all bots currently stored in Redis with their platform and configuration."""
+    try:
+        keys = redis_client.keys("bot_config:*")
+        bots = []
+        for key in keys:
+            bot_id = key.split(":")[-1]
+            config = redis_client.hgetall(key)
+            bots.append({
+                "botId": bot_id,
+                "platform": config.get("platform"),
+                "token": config.get("token")
+            })
+        return {"status": "ok", "bots": bots}
+    except Exception as e:
+        logger.error(f"Failed to list bots from Redis: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 @app.post("/api/bots", response_model=GenericResponse, tags=["Bots"], summary="Create a new bot")
 async def create_bot(request: CreateBotRequest):
     """
