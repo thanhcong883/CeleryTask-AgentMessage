@@ -96,8 +96,8 @@ class ZaloProvider:
             raise
 
 
-# Global dictionary holding provider instances
 PROVIDERS: Dict[str, Any] = {
     "Telegram": TelegramProvider(),
+    "Whatapps": ZaloProvider(),
     "Zalo": ZaloProvider(),
 }

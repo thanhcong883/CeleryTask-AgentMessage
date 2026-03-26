@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import threading
+import uuid
+import json
 from typing import Dict, Any, Optional, Union, List
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, Path, Query
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, Path, Query, Response
 from pydantic import BaseModel, Field
 import redis
 import requests
@@ -79,6 +81,7 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
     }
 
     logger.info(f"Received Telegram message from {data['platform_user_id']}")
+    store_received_message(data)
     process_message.delay(data)
 
 
@@ -130,6 +133,16 @@ async def run_telegram_bot(bot_id: str, token: str, stop_event: asyncio.Event):
             else:
                 telegram_bots[bot_id]["status"] = "down"
 
+def store_received_message(data: Dict[str, Any]):
+    """Stores the received message in Redis with a 10-minute expiration."""
+    try:
+        msg_id = str(uuid.uuid4())
+        key = f"received_msg:{msg_id}"
+        redis_client.setex(key, 600, json.dumps(data))
+        logger.info(f"Stored message {msg_id} in Redis with 10min expiry")
+    except Exception as e:
+        logger.error(f"Failed to store message in Redis: {e}")
+
 def start_bot_thread(bot_id: str, token: str):
     def run_loop():
         loop = asyncio.new_event_loop()
@@ -164,6 +177,12 @@ def get_zalo_status(bot_id: str):
     response = requests.get(url, timeout=10)
     response.raise_for_status()
     return response.json()
+def get_zalo_qr_code(bot_id: str):
+    url = f"{config.ZALO_EXTERNAL_API_BASE}/qr/{bot_id}.png"
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    return response.content
+
 
 # --- API Endpoints ---
 
@@ -181,6 +200,25 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error during startup: {e}")
 
+@app.get("/api/bots", tags=["Bots"], summary="List all configured bots")
+async def list_bots():
+    """Retrieves a list of all bots currently stored in Redis with their platform and configuration."""
+    try:
+        keys = redis_client.keys("bot_config:*")
+        bots = []
+        for key in keys:
+            bot_id = key.split(":")[-1]
+            config = redis_client.hgetall(key)
+            bots.append({
+                "botId": bot_id,
+                "platform": config.get("platform"),
+                "token": config.get("token")
+            })
+        return {"status": "ok", "bots": bots}
+    except Exception as e:
+        logger.error(f"Failed to list bots from Redis: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 @app.post("/api/bots", response_model=GenericResponse, tags=["Bots"], summary="Create a new bot")
 async def create_bot(request: CreateBotRequest):
     """
@@ -190,6 +228,9 @@ async def create_bot(request: CreateBotRequest):
     - **Zalo**: Creates an account on the external system and configures a webhook.
     """
     bot_id = str(request.botId)
+    if redis_client.exists(f"bot_config:{bot_id}"):
+        return {"status": "ok", "message": f"Bot {bot_id} already exists"}
+
     platform = request.options.platform.lower()
     token = request.options.token
 
@@ -222,6 +263,15 @@ async def create_bot(request: CreateBotRequest):
         except Exception as e:
             logger.error(f"Error creating Zalo bot: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to create Zalo bot: {str(e)}")
+    elif platform == "whatapps":
+        try:
+            create_zalo_account(bot_id)
+            config_zalo_webhook(bot_id)
+            return {"status": "ok", "message": "WhatsApp bot created and webhook configured"}
+        except Exception as e:
+            logger.error(f"Error creating WhatsApp bot: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create WhatsApp bot: {str(e)}")
+
 
     else:
         raise HTTPException(status_code=400, detail=f"Platform {platform} not supported yet")
@@ -273,7 +323,35 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
         except Exception as e:
             return {"status": "down", "platform": "zalo", "error": str(e)}
 
+    elif platform == "whatapps":
+        try:
+            status_data = get_zalo_status(botId)
+            return {"status": status_data.get("status", "unknown"), "platform": "whatapps", "details": status_data}
+        except Exception as e:
+            return {"status": "down", "platform": "whatapps", "error": str(e)}
+
     return {"status": "unknown", "platform": platform}
+@app.get("/api/bots/{botId}/qrcode.png", tags=["Bots"], summary="Get QR code for bot authentication")
+async def get_bot_qrcode(botId: str = Path(..., description="The ID of the bot")):
+    """
+    Returns a PNG QR code for bot authentication. Currently only supported for Zalo.
+    """
+    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    if not bot_config:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    platform = bot_config.get("platform")
+
+    if platform in ["zalo", "whatapps"]:
+        try:
+            qr_content = get_zalo_qr_code(botId)
+            return Response(content=qr_content, media_type="image/png")
+        except Exception as e:
+            logger.error(f"Error fetching QR code for platform {platform} for bot {botId}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch QR code: {str(e)}")
+    else:
+        raise HTTPException(status_code=400, detail=f"QR code authentication not supported for platform {platform}")
+
 
 @app.post("/api/bots/{botId}/send", response_model=Dict[str, Any], tags=["Bots"], summary="Send a message")
 async def send_bot_message(
@@ -336,8 +414,24 @@ async def zalo_hook(
         "type": "private",
     }
 
+    store_received_message(msg_data)
     process_message.delay(msg_data)
     return {"status": "ok"}
+
+@app.get("/api/messages", tags=["Messages"], summary="Get all received messages from Redis")
+async def get_received_messages():
+    """Retrieves all received messages currently stored in Redis (up to 10 mins old)."""
+    try:
+        keys = redis_client.keys("received_msg:*")
+        messages = []
+        for key in keys:
+            msg_json = redis_client.get(key)
+            if msg_json:
+                messages.append(json.loads(msg_json))
+        return {"status": "ok", "messages": messages}
+    except Exception as e:
+        logger.error(f"Failed to retrieve messages from Redis: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
