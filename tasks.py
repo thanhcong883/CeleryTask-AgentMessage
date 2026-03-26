@@ -109,6 +109,34 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
         logger.error("Required fields missing in agent message data")
         return
 
+    # Check if this task is processing the *latest* message in the conversation.
+    # If a newer message has arrived while this task was waiting in the queue, skip this one.
+    latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
+    if latest_msg_id and latest_msg_id.decode("utf-8") != str(message_id):
+        logger.info(
+            "Skipping task for msg %s because a newer msg %s arrived for conversation %s",
+            message_id,
+            latest_msg_id.decode("utf-8"),
+            conversation_id,
+        )
+        return
+
+    # Skip agent check if an admin has recently been active
+    if redis_client.get(f"admin_active:{conversation_id}"):
+        logger.info(
+            "Admin active, skipping agent check for conversation %s", conversation_id
+        )
+        return
+
+    # If the bot is currently processing an answer for another message, we can choose to skip or wait.
+    # We skip here to avoid parallel bot answers if a previous one hasn't finished.
+    if redis_client.get(f"bot_processing:{conversation_id}"):
+        logger.info(
+            "Bot is currently processing another answer for %s. Skipping this check.",
+            conversation_id,
+        )
+        return
+
     # Fetch message history
     history = get_message_history(str(conversation_id), str(message_id))
     if history is None:
@@ -121,7 +149,15 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
         "history_chat": build_history_chat(history),
     }
 
+    # Set processing lock right before calling the slow AI API.
+    # This prevents parallel calls if messages arrived at the exact same millisecond.
+    redis_client.setex(f"bot_processing:{conversation_id}", 60, "1")
+
     agent_response = call_agent_webhook(agent_payload)
+
+    # Release processing lock so the bot is ready for the next message
+    redis_client.delete(f"bot_processing:{conversation_id}")
+
     if not agent_response:
         logger.error("Agent webhook call failed")
         return
@@ -247,19 +283,23 @@ def process_message(data: Dict[str, Any]) -> None:
         )
         return
 
-    # Check if admin is currently active or bot is already processing a question
+    # Check if admin is currently active
     if redis_client.get(f"admin_active:{conversation_id}"):
         logger.info(
             "Skipping agent check for %s because an admin is active.", conversation_id
         )
         return
 
-    if redis_client.get(f"bot_processing:{conversation_id}"):
-        logger.info(
-            "Skipping agent check for %s because bot is already processing a recent question.",
-            conversation_id,
-        )
-        return
+    # NEW DEBOUNCE LOGIC:
+    # Set the latest message ID for this conversation. If a new message comes in,
+    # it overwrites this key. The `check_agent_answer` task will verify this key before proceeding.
+    # Expiry is set to a reasonable time (e.g., 1 hour) just to clean up Redis.
+    redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
+    logger.info("Set latest user message for %s to %s", conversation_id, message_id)
+
+    # Note: We removed the `bot_processing:{conversation_id}` lock from here.
+    # It allows new messages to be scheduled, effectively resetting the agent check
+    # timer since the old tasks will see `latest_user_message` has changed and abort themselves.
 
     # Check if the question needs agent processing
     _schedule_agent_check(data, conversation_id, message_id, conversation_info)
@@ -290,16 +330,6 @@ def _schedule_agent_check(
 
     time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
 
-    # Question is valid: Lock bot from answering subsequent questions for time_to_use_agent + buffer
-    # The buffer ensures that the bot has time to finish answering the first question
-    lock_time = int(time_to_use_agent) + 60
-    redis_client.setex(f"bot_processing:{conversation_id}", lock_time, "1")
-    logger.info(
-        "Bot processing locked for conversation %s for %d seconds.",
-        conversation_id,
-        lock_time,
-    )
-
     agent_check_data = {
         "conversation": conversation_id,
         "message_id": message_id,
@@ -320,8 +350,9 @@ def _schedule_agent_check(
         args=(agent_check_data,), countdown=int(time_to_use_agent)
     )
     logger.info(
-        "Scheduled agent check for conversation %s in %ds",
+        "Scheduled agent check for conversation %s, msg %s in %ds",
         conversation_id,
+        message_id,
         int(time_to_use_agent),
     )
 
