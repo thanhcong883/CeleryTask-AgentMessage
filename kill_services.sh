@@ -8,9 +8,11 @@ pkill -f "python3 main.py"
 echo "Killing Celery workers..."
 pkill -f celery
 
-# Kill Pytest
-echo "Killing Pytest..."
+# Kill Pytest, Pylt and Cloudflared
+echo "Killing Pytest, Pylt and Cloudflared..."
 pkill -f pytest
+pkill -f pylt
+pkill -f cloudflared
 
 # Check ports
 echo "Checking ports 8000 and 8001..."

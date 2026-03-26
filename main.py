@@ -168,6 +168,12 @@ def start_bot_thread(bot_id: str, token: str):
 
 # --- Zalo Integration Helpers ---
 
+def get_zalo_accounts():
+    url = f"{config.ZALO_EXTERNAL_API_BASE}/api/accounts"
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
 def create_zalo_account(bot_id: str):
     url = f"{config.ZALO_EXTERNAL_API_BASE}/api/accounts"
     response = requests.post(url, json={"accountId": bot_id}, timeout=10)
@@ -188,9 +194,16 @@ def get_zalo_webhook_config(bot_id: str):
     return response.json()
 
 def sync_zalo_webhook(bot_id: str):
-    """Checks if the Zalo webhook matches the current CONFIG['BASE_URL'] and updates if necessary."""
+    """Checks if the Zalo account exists and webhook matches the current CONFIG['BASE_URL']."""
     current_webhook = f"{CONFIG['BASE_URL']}/api/hook?platform=zalo"
     try:
+        # 1. Check if account exists
+        accounts = get_zalo_accounts()
+        if not any(acc.get("accountId") == bot_id for acc in accounts):
+            logger.info(f"Creating Zalo account for {bot_id} on external platform")
+            create_zalo_account(bot_id)
+        
+        # 2. Check and sync webhook config
         remote_config = get_zalo_webhook_config(bot_id)
         if remote_config.get("webhookUrl") != current_webhook:
             logger.info(f"Updating Zalo webhook for {bot_id} from {remote_config.get('webhookUrl')} to {current_webhook}")
@@ -266,6 +279,7 @@ async def update_system_config(payload: Dict[str, Any]):
                 sync_zalo_webhook(bot_id)
     return {"status": "ok", "config": CONFIG}
 
+@app.post("/api/bots", tags=["Bots"], summary="Create a new bot")
 async def create_bot(request: CreateBotRequest):
     """
     Initialize a new bot on the specified platform.
@@ -306,16 +320,14 @@ async def create_bot(request: CreateBotRequest):
 
     elif platform == "zalo":
         try:
-            create_zalo_account(bot_id)
-            config_zalo_webhook(bot_id)
+            sync_zalo_webhook(bot_id)
             return {"status": "ok", "message": "Zalo bot created and webhook configured"}
         except Exception as e:
             logger.error(f"Error creating Zalo bot: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to create Zalo bot: {str(e)}")
     elif platform == "whatapps":
         try:
-            create_zalo_account(bot_id)
-            config_zalo_webhook(bot_id)
+            sync_zalo_webhook(bot_id)
             return {"status": "ok", "message": "WhatsApp bot created and webhook configured"}
         except Exception as e:
             logger.error(f"Error creating WhatsApp bot: {e}")

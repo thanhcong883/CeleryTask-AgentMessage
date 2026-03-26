@@ -4,7 +4,7 @@ import time
 import uuid
 import os
 
-def test_zalo_manual_message_receipt(server_process, worker_process, tunnel_url, test_env):
+def test_zalo_manual_message_receipt(server_process, worker_process, tunnel_url, test_env, request_with_retry):
     """
     Manual Zalo test that sends a unique random string and waits for its receipt.
     Uses the tunnel_url fixture to communicate with the exposed server.
@@ -14,7 +14,7 @@ def test_zalo_manual_message_receipt(server_process, worker_process, tunnel_url,
     # 0. Health check tunnel
     print(f"\n>>> CHECKING TUNNEL CONNECTIVITY: {tunnel_url}...")
     try:
-        resp = requests.get(f"{tunnel_url}/api/bots", timeout=15)
+        resp = request_with_retry("get", f"{tunnel_url}/api/bots", timeout=15)
         if resp.status_code != 200:
             raise RuntimeError(f"Tunnel health check failed with status {resp.status_code}: {resp.text}")
         print(f">>> TUNNEL HEALTH CHECK PASSED.")
@@ -48,7 +48,7 @@ def test_zalo_manual_message_receipt(server_process, worker_process, tunnel_url,
             "group_id": target_id,
             "type": msg_type
         }
-        resp = requests.post(f"{BASE_URL}/bots/{bot_id}/send", json=send_payload)
+        resp = request_with_retry("post", f"{BASE_URL}/bots/{bot_id}/send", json=send_payload)
         if resp.status_code != 200:
             print(f"Warning: Failed to send initial invitation: {resp.text}")
 
@@ -61,7 +61,7 @@ def test_zalo_manual_message_receipt(server_process, worker_process, tunnel_url,
     while time.time() - start_time < timeout:
         try:
             # Poll /api/messages endpoint
-            response = requests.get(f"{BASE_URL}/messages")
+            response = request_with_retry("get", f"{tunnel_url}/api/messages")
             if response.status_code == 200:
                 messages = response.json().get("messages", [])
                 for msg in messages:

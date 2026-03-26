@@ -2,9 +2,8 @@ import requests
 import pytest
 import time
 
-BASE_URL = "http://localhost:8000/api"
-
-def test_telegram_bot_lifecycle(server_process, worker_process, test_env):
+def test_telegram_bot_lifecycle(server_process, worker_process, tunnel_url, test_env, request_with_retry):
+    BASE_URL = f"{tunnel_url}/api"
     bot_id = "pytest_tg_bot"
     token = test_env["token"]
     
@@ -19,14 +18,14 @@ def test_telegram_bot_lifecycle(server_process, worker_process, test_env):
             "token": token
         }
     }
-    response = requests.post(f"{BASE_URL}/bots", json=create_payload)
+    response = request_with_retry("POST", f"{BASE_URL}/bots", json=create_payload)
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
     # 2. Check Status
     # Give it a moment to initialize the bot thread
     time.sleep(2)
-    response = requests.get(f"{BASE_URL}/bots/{bot_id}/status")
+    response = request_with_retry("GET", f"{BASE_URL}/bots/{bot_id}/status")
     assert response.status_code == 200
     data = response.json()
     assert data["platform"] == "telegram"
@@ -35,19 +34,20 @@ def test_telegram_bot_lifecycle(server_process, worker_process, test_env):
     assert data["status"] in ["wait", "up"]
 
     # 3. Delete Bot
-    response = requests.delete(f"{BASE_URL}/bots/{bot_id}")
+    response = request_with_retry("DELETE", f"{BASE_URL}/bots/{bot_id}")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     
     # Verify it's gone
-    response = requests.get(f"{BASE_URL}/bots/{bot_id}/status")
+    response = request_with_retry("GET", f"{BASE_URL}/bots/{bot_id}/status")
     assert response.status_code == 404
 
-def test_manual_message_receipt(server_process, worker_process, test_env):
+def test_manual_message_receipt(server_process, worker_process, tunnel_url, test_env, request_with_retry):
     """
     Test that the bot can receive a manual message from a real user.
     This test waits for 5 minutes for a message to arrive in the group.
     """
+    BASE_URL = f"{tunnel_url}/api"
     import redis
     import json
     import config
@@ -67,7 +67,7 @@ def test_manual_message_receipt(server_process, worker_process, test_env):
         "botId": bot_id,
         "options": {"platform": "telegram", "token": token}
     }
-    response = requests.post(f"{BASE_URL}/bots", json=create_payload)
+    response = request_with_retry("POST", f"{BASE_URL}/bots", json=create_payload)
     assert response.status_code == 200
 
     # 2. Wait for Bot to initialize and send an invitation message
@@ -80,7 +80,7 @@ def test_manual_message_receipt(server_process, worker_process, test_env):
         "group_id": group_id,
         "type": "group"
     }
-    requests.post(f"{BASE_URL}/bots/{bot_id}/send", json=send_payload)
+    request_with_retry("POST", f"{BASE_URL}/bots/{bot_id}/send", json=send_payload)
 
     # 3. Wait 5 minutes for user message
     print(f"\n>>> PLEASE SEND THIS TEXT TO THE TELEGRAM GROUP: {random_text}")
@@ -93,7 +93,7 @@ def test_manual_message_receipt(server_process, worker_process, test_env):
     while time.time() - start_time < timeout:
         # Check /api/messages endpoint
         try:
-            resp = requests.get(f"{BASE_URL}/messages")
+            resp = request_with_retry("GET", f"{BASE_URL}/messages")
             if resp.status_code == 200:
                 messages = resp.json().get("messages", [])
                 for msg in messages:
@@ -109,6 +109,6 @@ def test_manual_message_receipt(server_process, worker_process, test_env):
         time.sleep(5)
         
     # Cleanup
-    requests.delete(f"{BASE_URL}/bots/{bot_id}")
+    request_with_retry("DELETE", f"{BASE_URL}/bots/{bot_id}")
     
     assert received, f"Did not receive the expected text '{random_text}' in the group within 5 minutes."

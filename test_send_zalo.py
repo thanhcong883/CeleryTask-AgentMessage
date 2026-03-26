@@ -1,9 +1,9 @@
 import requests
 import os
 import uuid
-
-# Use localhost:8000 since server is started by conftest or manually
-BASE_URL = "http://123.30.233.74:5000/api"
+import config
+# Use ZALO_EXTERNAL_API_BASE from config/environment
+BASE_URL = f"{config.ZALO_EXTERNAL_API_BASE}/api"
 
 def test_send():
     # Attempt to load from environment or use kien/TEST_ZALO_GROUP as suggested
