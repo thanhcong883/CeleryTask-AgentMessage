@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import threading
+import uuid
+import json
 from typing import Dict, Any, Optional, Union, List
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, Path, Query, Response
@@ -79,6 +81,7 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
     }
 
     logger.info(f"Received Telegram message from {data['platform_user_id']}")
+    store_received_message(data)
     process_message.delay(data)
 
 
@@ -129,6 +132,16 @@ async def run_telegram_bot(bot_id: str, token: str, stop_event: asyncio.Event):
                 del telegram_bots[bot_id]
             else:
                 telegram_bots[bot_id]["status"] = "down"
+
+def store_received_message(data: Dict[str, Any]):
+    """Stores the received message in Redis with a 10-minute expiration."""
+    try:
+        msg_id = str(uuid.uuid4())
+        key = f"received_msg:{msg_id}"
+        redis_client.setex(key, 600, json.dumps(data))
+        logger.info(f"Stored message {msg_id} in Redis with 10min expiry")
+    except Exception as e:
+        logger.error(f"Failed to store message in Redis: {e}")
 
 def start_bot_thread(bot_id: str, token: str):
     def run_loop():
@@ -379,6 +392,7 @@ async def zalo_hook(
         "type": "private",
     }
 
+    store_received_message(msg_data)
     process_message.delay(msg_data)
     return {"status": "ok"}
 
