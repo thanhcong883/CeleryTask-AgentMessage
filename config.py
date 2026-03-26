@@ -56,6 +56,9 @@ HEADERS_API_BACKEND: Dict[str, Optional[str]] = {
 }
 
 # Platform Configurations
+ZALO_SYSTEM_URL = "http://123.30.233.74:5000"
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+
 PLATFORMS: Dict[str, Dict[str, str]] = {
     "Telegram": {
         "url": "https://api.telegram.org/bot{token}/sendMessage",
