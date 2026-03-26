@@ -22,15 +22,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Bot Management System")
 
 # Redis client
-# Try connecting to the configured Redis URL
 try:
     redis_client = redis.from_url(config.REDIS_URL, decode_responses=True)
     redis_client.ping()
 except Exception as e:
     logger.error(f"Failed to connect to Redis at {config.REDIS_URL}: {e}")
-    # In production, we might want to fail here, but for now we'll just log
-    # and provide a dummy client to avoid crashes if possible,
-    # though Redis is required for the requested features.
     redis_client = redis.Redis(host="localhost", decode_responses=True)
 
 # Active Telegram bots: bot_id -> {"loop": loop, "stop_event": stop_event}
@@ -56,7 +52,6 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
     if not update.message or not update.message.text:
         return
 
-    # Format message for process_message task
     data = {
         "platform_name": "Telegram",
         "content": update.message.text,
@@ -79,7 +74,6 @@ async def run_telegram_bot(bot_id: str, token: str, stop_event: asyncio.Event):
         await application.start()
         await application.updater.start_polling()
 
-        # Keep running until stop event is set
         await stop_event.wait()
 
         await application.updater.stop()
@@ -131,7 +125,6 @@ def get_zalo_status(bot_id: str):
 
 @app.on_event("startup")
 async def startup_event():
-    # Restart Telegram listeners from Redis
     try:
         bot_keys = redis_client.keys("bot_config:*")
         for key in bot_keys:
@@ -149,7 +142,6 @@ async def create_bot(request: CreateBotRequest):
     platform = request.options.platform.lower()
     token = request.options.token
 
-    # Save config to Redis
     try:
         redis_client.hset(f"bot_config:{bot_id}", mapping={
             "platform": platform,
@@ -193,7 +185,6 @@ async def delete_bot(botId: str):
         if bot_info:
             bot_info["loop"].call_soon_threadsafe(bot_info["stop_event"].set)
 
-    # Remove from Redis
     redis_client.delete(f"bot_config:{botId}")
     return {"status": "ok", "message": f"Bot {botId} deleted"}
 
@@ -231,6 +222,7 @@ async def send_bot_message(botId: str, request: SendMessageRequest):
          raise HTTPException(status_code=400, detail=f"No provider for {platform_name}")
 
     send_data = {
+        "bot_id": botId,
         "token": bot_config.get("token"),
         "content": request.content,
         "user_id": request.user_id,

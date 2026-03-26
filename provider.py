@@ -60,34 +60,41 @@ class TelegramProvider:
 
 
 class ZaloProvider:
-    """Provider for sending messages to Zalo Official Account."""
+    """Provider for sending messages to Zalo via External API."""
 
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a text message via Zalo Open API."""
-        logger.info("Sending Zalo message with data: %s", _mask_token(data))
-        conf = config.PLATFORMS.get("Zalo", {})
+        """Send a text message via External Zalo API."""
+        logger.info("Sending Zalo message through external API with data: %s", _mask_token(data))
 
-        chat_type = data.get("type", "").strip()
-        is_private = chat_type == "private"
-        url = conf.get("private_url") if is_private else conf.get("group_url")
+        # Bot ID is required to identify the Zalo account in the external system.
+        # Assuming the token passed in data might be used or bot_id is available.
+        # The requirements had botId: string|number in /api/bots.
+        # In our provider data, we usually have user_id, content, etc.
+        # We need the botId to call the external API: {ZALO_EXTERNAL_API_BASE}/api/bots/{botId}/send
 
-        headers = {"access_token": data.get("token", "")}
-        recipient_id = data.get("user_id") if is_private else data.get("group_id")
+        bot_id = data.get("bot_id") or data.get("token") # Fallback to token if bot_id not provided
+        if not bot_id:
+             logger.error("No bot_id provided for Zalo message send.")
+             raise ValueError("bot_id is required for Zalo messages")
+
+        url = f"{config.ZALO_EXTERNAL_API_BASE}/api/bots/{bot_id}/send"
 
         payload = {
-            "recipient": {"user_id" if is_private else "group_id": recipient_id},
-            "message": {"text": data.get("content")},
+            "content": data.get("content"),
+            "user_id": data.get("user_id"),
+            "group_id": data.get("group_id"),
+            "type": data.get("type", "private"),
         }
 
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response = requests.post(url, json=payload, timeout=10)
             response.raise_for_status()
-            logger.info("Successfully sent Zalo message.")
+            logger.info("Successfully sent Zalo message via external API.")
             return response.json()
         except RequestException as e:
             logger.error(
-                "Failed to send Zalo message. Data: %s, Error: %s",
-                _mask_token(data),
+                "Failed to send Zalo message via external API. URL: %s, Error: %s",
+                url,
                 str(e),
             )
             raise
