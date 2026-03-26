@@ -43,6 +43,10 @@ STRAPI_GET_CONVERSATION_MEMBER: str = (
 N8N_AGENT_WEBHOOK: Optional[str] = os.getenv("N8N_AGENT_WEBHOOK")
 CHECK_QUESTION_API: Optional[str] = os.getenv("CHECK_QUESTION_API")
 
+# External Zalo API Base
+ZALO_EXTERNAL_API_BASE: str = os.getenv("ZALO_EXTERNAL_API_BASE", "http://123.30.233.74:5000")
+BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
+
 # Headers
 HEADERS_STRAPI: Dict[str, Optional[str]] = {
     "Authorization": STRAPI_TOKEN,
