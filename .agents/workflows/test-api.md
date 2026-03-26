@@ -13,6 +13,10 @@ This workflow describes how to start the server, the Celery worker, and test the
 
 ### 1. Start the Server
 
+Using .env
+
+
+
 ```bash
 ./venv/bin/python3 main.py
 ```
@@ -104,7 +108,8 @@ This section describes how to verify that the bot is correctly receiving and pro
    - `Received Telegram message from ...`
    - `API Request (POST): .../sync-message`
 5. **Verify Syncing**: If the `.env` is correctly configured with Strapi/N8N URLs, the message should be successfully synced. If you see connection errors (e.g., to `localhost:1337`), it means the backend service is not running, but the bot **correctly received the message**.
-6. **Confirm with User**: Ask the user to confirm they saw the message in the logs or in the backend.
+6. **Confirm with User**: Ask the user to send some message on test group
+7. Confirm message received
 
 #### Manual Verification Example
 
