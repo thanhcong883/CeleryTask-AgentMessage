@@ -68,7 +68,7 @@ telegram_bots: Dict[str, Dict[str, Any]] = {}
 async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
-
+    
     data = {
         "platform_name": "Telegram",
         "content": update.message.text,

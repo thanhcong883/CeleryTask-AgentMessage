@@ -30,6 +30,7 @@ class TelegramProvider:
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Send a text message via Telegram Bot API."""
         conf = config.PLATFORMS.get("Telegram", {})
+        # todo: get token from redis by bot_id
         url = conf.get("url", "").format(token=data.get("token", ""))
 
         # Determine appropriate ID field depending on chat type
