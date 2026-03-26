@@ -82,39 +82,37 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
     process_message.delay(data)
 
 
-# Mapping from token to bot_id for health monitoring
-token_to_bot_id: Dict[str, str] = {}
-
-class MonitoredBot(ExtBot):
-    async def get_updates(self, *args, **kwargs):
-        bot_id = token_to_bot_id.get(self.token)
-        try:
-            updates = await super().get_updates(*args, **kwargs)
-            if bot_id and bot_id in telegram_bots:
-                telegram_bots[bot_id]["status"] = "up"
-                telegram_bots[bot_id]["error"] = None
-            return updates
-        except Exception as e:
-            logger.error(f"Error in get_updates for bot {bot_id}: {e}")
-            if bot_id and bot_id in telegram_bots:
-                telegram_bots[bot_id]["status"] = "down"
-                telegram_bots[bot_id]["error"] = str(e)
-            raise
 
 async def run_telegram_bot(bot_id: str, token: str, stop_event: asyncio.Event):
     logger.info(f"Starting Telegram bot {bot_id} listener")
     try:
-        token_to_bot_id[token] = bot_id
-        bot = MonitoredBot(token)
-        application = ApplicationBuilder().bot(bot).build()
+        application = ApplicationBuilder().token(token).build()
+
+        async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+            logger.error(f"Error in Telegram bot {bot_id}: {context.error}")
+            if bot_id in telegram_bots:
+                telegram_bots[bot_id]["status"] = "down"
+                telegram_bots[bot_id]["error"] = str(context.error)
+
+        application.add_error_handler(error_handler)
         application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), telegram_message_handler))
 
         await application.initialize()
-
         await application.start()
         await application.updater.start_polling()
 
-        await stop_event.wait()
+        if bot_id in telegram_bots:
+            telegram_bots[bot_id]["status"] = "up"
+            telegram_bots[bot_id]["error"] = None
+
+        # Periodically reset status to "up" to check if errors persist via error_handler
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=30)
+            except asyncio.TimeoutError:
+                if bot_id in telegram_bots and telegram_bots[bot_id]["status"] == "down":
+                    telegram_bots[bot_id]["status"] = "up"
+                    telegram_bots[bot_id]["error"] = None
 
         await application.updater.stop()
         await application.stop()
@@ -122,9 +120,15 @@ async def run_telegram_bot(bot_id: str, token: str, stop_event: asyncio.Event):
         logger.info(f"Stopped Telegram bot {bot_id} listener")
     except Exception as e:
         logger.error(f"Error in Telegram bot {bot_id}: {e}")
+        if bot_id in telegram_bots:
+            telegram_bots[bot_id]["status"] = "down"
+            telegram_bots[bot_id]["error"] = str(e)
     finally:
         if bot_id in telegram_bots:
-            del telegram_bots[bot_id]
+            if stop_event.is_set():
+                del telegram_bots[bot_id]
+            else:
+                telegram_bots[bot_id]["status"] = "down"
 
 def start_bot_thread(bot_id: str, token: str):
     def run_loop():
@@ -202,7 +206,10 @@ async def create_bot(request: CreateBotRequest):
         if not token:
             raise HTTPException(status_code=400, detail="Token is required for Telegram")
         if bot_id in telegram_bots:
-            return {"status": "ok", "message": "Telegram bot listener already running"}
+            if telegram_bots[bot_id].get("status") == "down":
+                del telegram_bots[bot_id]
+            else:
+                return {"status": "ok", "message": "Telegram bot listener already running"}
 
         start_bot_thread(bot_id, token)
         return {"status": "ok", "message": "Telegram bot listener started"}
@@ -231,6 +238,9 @@ async def delete_bot(botId: str = Path(..., description="The ID of the bot to de
     if platform == "telegram":
         bot_info = telegram_bots.get(botId)
         if bot_info:
+            details = (bot_info.get("details") or {}).copy()
+            if "error" not in details:
+                details["error"] = bot_info.get("error")
             bot_info["loop"].call_soon_threadsafe(bot_info["stop_event"].set)
 
     redis_client.delete(f"bot_config:{botId}")
@@ -248,10 +258,13 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
     if platform == "telegram":
         bot_info = telegram_bots.get(botId)
         if bot_info:
+            details = (bot_info.get("details") or {}).copy()
+            if "error" not in details:
+                details["error"] = bot_info.get("error")
             return {
                 "status": bot_info.get("status", "up"),
                 "platform": "telegram",
-                "details": {"error": bot_info.get("error")}
+                "details": details
             }
         return {"status": "down", "platform": "telegram"}
 
