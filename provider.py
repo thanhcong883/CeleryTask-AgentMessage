@@ -34,12 +34,7 @@ class TelegramProvider:
         url = conf.get("url", "").format(token=data.get("token", ""))
 
         # Determine appropriate ID field depending on chat type
-        chat_type = data.get("type", "")
-        chat_id = (
-            data.get("group_id")
-            if chat_type in ["group", "supergroup"]
-            else data.get("user_id")
-        )
+        chat_id = data.get("group_id") or data.get("user_id")
 
         payload = {
             "chat_id": chat_id,

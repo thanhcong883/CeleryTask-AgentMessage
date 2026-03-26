@@ -238,10 +238,8 @@ async def delete_bot(botId: str = Path(..., description="The ID of the bot to de
     if platform == "telegram":
         bot_info = telegram_bots.get(botId)
         if bot_info:
-            details = (bot_info.get("details") or {}).copy()
-            if "error" not in details:
-                details["error"] = bot_info.get("error")
-            bot_info["loop"].call_soon_threadsafe(bot_info["stop_event"].set)
+            if not bot_info["loop"].is_closed():
+                bot_info["loop"].call_soon_threadsafe(bot_info["stop_event"].set)
 
     redis_client.delete(f"bot_config:{botId}")
     return {"status": "ok", "message": f"Bot {botId} deleted"}
