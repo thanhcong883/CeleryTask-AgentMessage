@@ -396,6 +396,21 @@ async def zalo_hook(
     process_message.delay(msg_data)
     return {"status": "ok"}
 
+@app.get("/api/messages", tags=["Messages"], summary="Get all received messages from Redis")
+async def get_received_messages():
+    """Retrieves all received messages currently stored in Redis (up to 10 mins old)."""
+    try:
+        keys = redis_client.keys("received_msg:*")
+        messages = []
+        for key in keys:
+            msg_json = redis_client.get(key)
+            if msg_json:
+                messages.append(json.loads(msg_json))
+        return {"status": "ok", "messages": messages}
+    except Exception as e:
+        logger.error(f"Failed to retrieve messages from Redis: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

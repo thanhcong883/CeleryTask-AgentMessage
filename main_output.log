@@ -1,3 +1,7 @@
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16252]
 /app/main.py:189: DeprecationWarning:
         on_event is deprecated, use lifespan event handlers instead.
 
@@ -5,12 +9,12 @@
         [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
 
   @app.on_event("startup")
-INFO:     Started server process [16252]
+INFO:     Started server process [17474]
 INFO:     Waiting for application startup.
-2026-03-26 13:08:38,834 - __main__ - INFO - Restarted Telegram listener for bot test_tele
-2026-03-26 13:08:38,834 - __main__ - INFO - Starting Telegram bot test_tele listener
+2026-03-26 13:18:23,303 - __main__ - INFO - Starting Telegram bot test_tele listener
+2026-03-26 13:18:23,304 - __main__ - INFO - Restarted Telegram listener for bot test_tele
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-2026-03-26 13:08:39,364 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bottest_token/getMe "HTTP/1.1 404 Not Found"
-2026-03-26 13:08:39,366 - __main__ - ERROR - Error in Telegram bot test_tele: The token `test_token` was rejected by the server.
-INFO:     127.0.0.1:33580 - "GET /api/messages HTTP/1.1" 404 Not Found
+2026-03-26 13:18:23,827 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bottest_token/getMe "HTTP/1.1 404 Not Found"
+2026-03-26 13:18:23,828 - __main__ - ERROR - Error in Telegram bot test_tele: The token `test_token` was rejected by the server.
+INFO:     127.0.0.1:60214 - "GET /api/messages HTTP/1.1" 200 OK
