@@ -4,13 +4,22 @@ import time
 import uuid
 import os
 
-BASE_URL = "http://localhost:8000/api"
-
-def test_zalo_manual_message_receipt(server_process, worker_process, test_env):
+def test_zalo_manual_message_receipt(server_process, worker_process, tunnel_url, test_env):
     """
-    Test that the system can receive a manual message from a real user via Zalo.
-    This test generates a random code and waits for the user to send it to the Zalo OA.
+    Manual Zalo test that sends a unique random string and waits for its receipt.
+    Uses the tunnel_url fixture to communicate with the exposed server.
     """
+    BASE_URL = f"{tunnel_url}/api"
+    
+    # 0. Health check tunnel
+    print(f"\n>>> CHECKING TUNNEL CONNECTIVITY: {tunnel_url}...")
+    try:
+        resp = requests.get(f"{tunnel_url}/api/bots", timeout=15)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Tunnel health check failed with status {resp.status_code}: {resp.text}")
+        print(f">>> TUNNEL HEALTH CHECK PASSED.")
+    except Exception as e:
+        raise RuntimeError(f"Tunnel health check failed: {str(e)}")
     # Use 'kien' as the default bot ID if not provided in environment
     bot_id = test_env.get("zalo_bot_id", "kien")
     group_id = test_env.get("zalo_group_id") or "3739163992970418355"

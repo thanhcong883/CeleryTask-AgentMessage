@@ -5,6 +5,16 @@ import uuid
 import json
 from typing import Dict, Any, Optional, Union, List
 
+import config
+from api_client import (
+    get_conversation_info,
+)
+
+# Global configuration that can be updated for testing
+CONFIG = {
+    "BASE_URL": config.BASE_URL
+}
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, Path, Query, Response
 from pydantic import BaseModel, Field
 import redis
@@ -12,7 +22,6 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, ExtBot
 
-import config
 from tasks import process_message
 
 # Configure logging
@@ -167,10 +176,29 @@ def create_zalo_account(bot_id: str):
 
 def config_zalo_webhook(bot_id: str):
     url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/webhook-config"
-    webhook_url = f"{config.BASE_URL}/api/hook?platform=zalo"
+    webhook_url = f"{CONFIG['BASE_URL']}/api/hook?platform=zalo"
     response = requests.post(url, json={"webhookUrl": webhook_url}, timeout=10)
     response.raise_for_status()
     return response.json()
+
+def get_zalo_webhook_config(bot_id: str):
+    url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/webhook-config"
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+def sync_zalo_webhook(bot_id: str):
+    """Checks if the Zalo webhook matches the current CONFIG['BASE_URL'] and updates if necessary."""
+    current_webhook = f"{CONFIG['BASE_URL']}/api/hook?platform=zalo"
+    try:
+        remote_config = get_zalo_webhook_config(bot_id)
+        if remote_config.get("webhookUrl") != current_webhook:
+            logger.info(f"Updating Zalo webhook for {bot_id} from {remote_config.get('webhookUrl')} to {current_webhook}")
+            config_zalo_webhook(bot_id)
+        else:
+            logger.info(f"Zalo webhook for {bot_id} is already up to date.")
+    except Exception as e:
+        logger.error(f"Failed to sync Zalo webhook for {bot_id}: {e}")
 
 def get_zalo_status(bot_id: str):
     url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/auth-status"
@@ -197,6 +225,10 @@ async def startup_event():
                 bot_id = key.split(":")[-1]
                 start_bot_thread(bot_id, bot_data["token"])
                 logger.info(f"Restarted Telegram listener for bot {bot_id}")
+            elif bot_data.get("platform") == "zalo":
+                bot_id = key.split(":")[-1]
+                sync_zalo_webhook(bot_id)
+                logger.info(f"Synced Zalo webhook for bot {bot_id} on startup")
     except Exception as e:
         logger.error(f"Error during startup: {e}")
 
@@ -219,7 +251,21 @@ async def list_bots():
         logger.error(f"Failed to list bots from Redis: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-@app.post("/api/bots", response_model=GenericResponse, tags=["Bots"], summary="Create a new bot")
+@app.post("/api/config", tags=["System"])
+async def update_system_config(payload: Dict[str, Any]):
+    """Update system configuration at runtime (e.g., BASE_URL for tunnels)."""
+    if "BASE_URL" in payload:
+        CONFIG["BASE_URL"] = payload["BASE_URL"]
+        logger.info(f"System BASE_URL updated to: {CONFIG['BASE_URL']}")
+        # Trigger re-sync for all Zalo bots
+        keys = redis_client.keys("bot_config:*")
+        for key in keys:
+            bot_data = redis_client.hgetall(key)
+            if bot_data.get("platform") == "zalo":
+                bot_id = key.split(":")[-1]
+                sync_zalo_webhook(bot_id)
+    return {"status": "ok", "config": CONFIG}
+
 async def create_bot(request: CreateBotRequest):
     """
     Initialize a new bot on the specified platform.
@@ -228,7 +274,10 @@ async def create_bot(request: CreateBotRequest):
     - **Zalo**: Creates an account on the external system and configures a webhook.
     """
     bot_id = str(request.botId)
-    if redis_client.exists(f"bot_config:{bot_id}"):
+    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
+    if bot_config:
+        if bot_config.get("platform") == "zalo":
+             sync_zalo_webhook(bot_id)
         return {"status": "ok", "message": f"Bot {bot_id} already exists"}
 
     platform = request.options.platform.lower()
@@ -402,18 +451,32 @@ async def zalo_hook(
     body = await request.json()
     logger.info(f"Received Zalo hook: {body}")
 
-    data_field = body.get("data", {})
-    bot_id = data_field.get("idTo")
+    bot_id = body.get("accountId")
+    if not bot_id:
+        # Fallback to older nested structure if needed, but primary is accountId
+        data_field = body.get("data", {})
+        bot_id = data_field.get("idTo")
+
     bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
     token = bot_config.get("token") if bot_config else None
 
+    # Determine message type and identifiers
+    raw_data = body.get("raw", {}).get("data", {})
+    is_group = body.get("isGroup", False)
+    msg_type = "group" if is_group else "private"
+    
+    # Use raw fields as primary source of truth if available
+    content = raw_data.get("content") or body.get("text")
+    sender_id = raw_data.get("uidFrom") or body.get("from")
+    conv_id = body.get("threadId") or raw_data.get("idTo")
+    
     msg_data = {
         "platform_name": "Zalo",
-        "content": data_field.get("content"),
-        "platform_user_id": data_field.get("uidFrom"),
-        "platform_conv_id": data_field.get("uidFrom"),
+        "content": content,
+        "platform_user_id": sender_id,
+        "platform_conv_id": conv_id,
         "token": token,
-        "type": "private",
+        "type": msg_type,
     }
 
     store_received_message(msg_data)

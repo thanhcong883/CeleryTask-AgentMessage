@@ -1,37 +1,25 @@
-/root/agent-messages/main.py:189: DeprecationWarning: 
+/root/agent-messages/main.py:217: DeprecationWarning: 
         on_event is deprecated, use lifespan event handlers instead.
 
         Read more about it in the
         [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
         
   @app.on_event("startup")
-INFO:     Started server process [280788]
+INFO:     Started server process [320758]
 INFO:     Waiting for application startup.
+2026-03-26 16:03:24,899 - __main__ - INFO - Updating Zalo webhook for kien from https://good-pigs-dig.loca.lt/api/hook?platform=zalo to http://localhost:8000/api/hook?platform=zalo
+2026-03-26 16:03:24,904 - __main__ - INFO - Synced Zalo webhook for bot kien on startup
+2026-03-26 16:03:24,910 - __main__ - ERROR - Failed to sync Zalo webhook for pytest_zalo_bot: 404 Client Error: Not Found for url: http://123.30.233.74:5000/api/pytest_zalo_bot/webhook-config
+2026-03-26 16:03:24,910 - __main__ - INFO - Synced Zalo webhook for bot pytest_zalo_bot on startup
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:35180 - "GET /docs HTTP/1.1" 200 OK
-2026-03-26 14:56:28,841 - provider - INFO - Sending Zalo message through external API with data: {'bot_id': 'kien', 'token': '***', 'content': 'TEST START: Please reply with the following exact text to this group within 5 minutes:\n\nTEST-ZALO-fa354027', 'user_id': None, 'group_id': '3739163992970418355', 'type': 'group'}
-2026-03-26 14:56:29,008 - provider - INFO - Successfully sent Zalo message via external API.
-INFO:     127.0.0.1:35244 - "POST /api/bots/kien/send HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35252 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35384 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35490 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35642 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35746 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:35896 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36012 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36418 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36574 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36716 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36848 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:36976 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37090 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37214 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37332 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37474 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37586 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37728 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37856 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:38254 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:38408 - "GET /api/messages HTTP/1.1" 200 OK
-INFO:     127.0.0.1:38558 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44852 - "GET /docs HTTP/1.1" 200 OK
+2026-03-26 16:03:26,785 - __main__ - INFO - System BASE_URL updated to: https://tiny-yaks-enter.loca.lt
+2026-03-26 16:03:26,794 - __main__ - INFO - Updating Zalo webhook for kien from http://localhost:8000/api/hook?platform=zalo to https://tiny-yaks-enter.loca.lt/api/hook?platform=zalo
+2026-03-26 16:03:26,807 - __main__ - ERROR - Failed to sync Zalo webhook for pytest_zalo_bot: 404 Client Error: Not Found for url: http://123.30.233.74:5000/api/pytest_zalo_bot/webhook-config
+INFO:     127.0.0.1:44884 - "POST /api/config HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /api/bots HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [320758]

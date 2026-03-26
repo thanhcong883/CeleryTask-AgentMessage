@@ -53,3 +53,34 @@ def test_get_account_status():
         print(f"\n>>> Auth status for {account_id}: {data['isAuthenticated']}")
     else:
         print(f"\n>>> Note: Status check for {account_id} returned {response.status_code}")
+
+def test_zalo_webhook_config():
+    """
+    Test direct webhook configuration on the Zalo external API.
+    """
+    account_id = "kien"
+    url = f"{ZALO_API_BASE}/api/{account_id}/webhook-config"
+    
+    # 1. Get current config
+    response = requests.get(url, timeout=10)
+    assert response.status_code == 200, f"Failed to get webhook config: {response.text}"
+    data = response.json()
+    original_url = data.get("webhookUrl")
+    print(f"\n>>> Current webhook for {account_id}: {original_url}")
+    
+    # 2. Update config to a temporary test URL
+    test_url = f"http://test-webhook-{uuid.uuid4().hex[:6]}.com/hook"
+    response = requests.post(url, json={"webhookUrl": test_url}, timeout=10)
+    assert response.status_code == 200, f"Failed to update webhook: {response.text}"
+    
+    # 3. Verify update
+    response = requests.get(url, timeout=10)
+    current_data = response.json()
+    assert current_data.get("webhookUrl") == test_url, f"Webhook URL mismatch. Expected {test_url}, got {current_data.get('webhookUrl')}"
+    
+    # 4. Restore original URL (optional but good practice)
+    if original_url:
+        requests.post(url, json={"webhookUrl": original_url}, timeout=10)
+        print(f">>> Restored original webhook: {original_url}")
+        
+    print(f">>> SUCCESS: Zalo Webhook configuration verified (Get & Update).")
