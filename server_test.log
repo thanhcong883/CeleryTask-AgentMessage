@@ -1,0 +1,28 @@
+/app/main.py:189: DeprecationWarning:
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+  @app.on_event("startup")
+INFO:     Started server process [6960]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58726 - "GET /docs HTTP/1.1" 200 OK
+2026-03-26 14:12:45,322 - __main__ - INFO - Starting Telegram bot pytest_tg_bot listener
+INFO:     127.0.0.1:41832 - "POST /api/bots HTTP/1.1" 200 OK
+2026-03-26 14:12:45,818 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8685270318:AAF-9MOlE2qZ4aphAp4GpwoRZyHMaqXkpPY/getMe "HTTP/1.1 200 OK"
+2026-03-26 14:12:45,820 - telegram.ext.Application - INFO - Application started
+2026-03-26 14:12:45,937 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8685270318:AAF-9MOlE2qZ4aphAp4GpwoRZyHMaqXkpPY/deleteWebhook "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:41838 - "GET /api/bots/pytest_tg_bot/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41842 - "DELETE /api/bots/pytest_tg_bot HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41848 - "GET /api/bots/pytest_tg_bot/status HTTP/1.1" 404 Not Found
+2026-03-26 14:12:47,703 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8685270318:AAF-9MOlE2qZ4aphAp4GpwoRZyHMaqXkpPY/getUpdates "HTTP/1.1 200 OK"
+2026-03-26 14:12:47,705 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
+2026-03-26 14:12:47,705 - telegram.ext.Application - INFO - Application.stop() complete
+2026-03-26 14:12:47,707 - __main__ - INFO - Stopped Telegram bot pytest_tg_bot listener
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6960]

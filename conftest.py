@@ -8,7 +8,7 @@ import signal
 @pytest.fixture(scope="session")
 def server_process():
     """Starts the FastAPI server for the duration of the test session."""
-    cmd = ["./venv/bin/python3", "main.py"]
+    cmd = ["python3", "main.py"]
     env = os.environ.copy()
     env["PORT"] = "8000"
     log_file = open("server_test.log", "w")
@@ -36,7 +36,7 @@ def server_process():
 @pytest.fixture(scope="session")
 def worker_process():
     """Starts the Celery worker for the duration of the test session."""
-    cmd = ["./venv/bin/celery", "-A", "tasks", "worker", "--loglevel=info", "-Q", "celery_receive_message", "--concurrency=1"]
+    cmd = ["celery", "-A", "tasks", "worker", "--loglevel=info", "-Q", "celery_receive_message", "--concurrency=1"]
     log_file = open("worker_test.log", "w")
     process = subprocess.Popen(cmd, stdout=log_file, stderr=log_file, preexec_fn=os.setsid)
     
