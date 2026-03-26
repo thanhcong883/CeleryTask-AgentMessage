@@ -1,10 +1,10 @@
 import asyncio
 import logging
 import threading
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, Path, Query
+from pydantic import BaseModel, Field
 import redis
 import requests
 from telegram import Update
@@ -19,7 +19,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Bot Management System")
+# --- Models for Documentation ---
+
+class BotOptions(BaseModel):
+    platform: str = Field(..., description="Platform type: telegram, zalo, or whatapps", examples=["telegram"])
+    token: Optional[str] = Field(None, description="Access token for the platform (required for Telegram)", examples=["7123456789:ABCDefgh-IJKLmnopQRstuvwxYZ12345678"])
+
+class CreateBotRequest(BaseModel):
+    botId: Union[str, int] = Field(..., description="Unique ID for the bot", examples=["my_telegram_bot_1"])
+    options: BotOptions
+
+class SendMessageRequest(BaseModel):
+    content: str = Field(..., description="Message content to send", examples=["Hello from the bot!"])
+    user_id: Optional[str] = Field(None, description="Recipient user ID for private messages", examples=["123456789"])
+    group_id: Optional[str] = Field(None, description="Recipient group ID for group messages", examples=["-987654321"])
+    type: str = Field("private", description="Message type: private or group", examples=["private"])
+
+class GenericResponse(BaseModel):
+    status: str = Field(..., examples=["ok"])
+    message: Optional[str] = Field(None, examples=["Operation successful"])
+
+class BotStatusResponse(BaseModel):
+    status: str = Field(..., description="Bot status: up, down, or other platform-specific status", examples=["up"])
+    platform: str = Field(..., examples=["telegram"])
+    details: Optional[Dict[str, Any]] = None
+
+# --- Application Initialization ---
+
+app = FastAPI(
+    title="Bot Management System API",
+    description="API for managing Telegram and Zalo bots, including message listening and sending.",
+    version="1.0.0",
+)
 
 # Redis client
 try:
@@ -31,20 +62,6 @@ except Exception as e:
 
 # Active Telegram bots: bot_id -> {"loop": loop, "stop_event": stop_event}
 telegram_bots: Dict[str, Dict[str, Any]] = {}
-
-class BotOptions(BaseModel):
-    platform: str
-    token: Optional[str] = None
-
-class CreateBotRequest(BaseModel):
-    botId: Union[str, int]
-    options: BotOptions
-
-class SendMessageRequest(BaseModel):
-    content: str
-    user_id: Optional[str] = None
-    group_id: Optional[str] = None
-    type: str = "private"
 
 # --- Telegram Listener Logic ---
 
@@ -125,6 +142,7 @@ def get_zalo_status(bot_id: str):
 
 @app.on_event("startup")
 async def startup_event():
+    """Restart active Telegram listeners on server startup."""
     try:
         bot_keys = redis_client.keys("bot_config:*")
         for key in bot_keys:
@@ -136,8 +154,14 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error during startup: {e}")
 
-@app.post("/api/bots")
+@app.post("/api/bots", response_model=GenericResponse, tags=["Bots"], summary="Create a new bot")
 async def create_bot(request: CreateBotRequest):
+    """
+    Initialize a new bot on the specified platform.
+
+    - **Telegram**: Starts a long-polling listener in a background thread.
+    - **Zalo**: Creates an account on the external system and configures a webhook.
+    """
     bot_id = str(request.botId)
     platform = request.options.platform.lower()
     token = request.options.token
@@ -172,8 +196,9 @@ async def create_bot(request: CreateBotRequest):
     else:
         raise HTTPException(status_code=400, detail=f"Platform {platform} not supported yet")
 
-@app.delete("/api/bots/{botId}")
-async def delete_bot(botId: str):
+@app.delete("/api/bots/{botId}", response_model=GenericResponse, tags=["Bots"], summary="Delete a bot")
+async def delete_bot(botId: str = Path(..., description="The ID of the bot to delete")):
+    """Removes a bot's configuration and stops any active listeners (for Telegram)."""
     bot_config = redis_client.hgetall(f"bot_config:{botId}")
     if not bot_config:
         raise HTTPException(status_code=404, detail="Bot not found")
@@ -188,8 +213,9 @@ async def delete_bot(botId: str):
     redis_client.delete(f"bot_config:{botId}")
     return {"status": "ok", "message": f"Bot {botId} deleted"}
 
-@app.get("/api/bots/{botId}/status")
-async def get_bot_status(botId: str):
+@app.get("/api/bots/{botId}/status", response_model=BotStatusResponse, tags=["Bots"], summary="Get bot status")
+async def get_bot_status(botId: str = Path(..., description="The ID of the bot to check")):
+    """Checks if the bot's listener is active (for Telegram) or gets status from the external API (for Zalo)."""
     bot_config = redis_client.hgetall(f"bot_config:{botId}")
     if not bot_config:
         raise HTTPException(status_code=404, detail="Bot not found")
@@ -209,8 +235,12 @@ async def get_bot_status(botId: str):
 
     return {"status": "unknown", "platform": platform}
 
-@app.post("/api/bots/{botId}/send")
-async def send_bot_message(botId: str, request: SendMessageRequest):
+@app.post("/api/bots/{botId}/send", response_model=Dict[str, Any], tags=["Bots"], summary="Send a message")
+async def send_bot_message(
+    botId: str = Path(..., description="The ID of the bot to send the message from"),
+    request: SendMessageRequest = Body(...)
+):
+    """Sends a message through the specified bot using the appropriate platform provider."""
     bot_config = redis_client.hgetall(f"bot_config:{botId}")
     if not bot_config:
         raise HTTPException(status_code=404, detail="Bot not found")
@@ -237,8 +267,15 @@ async def send_bot_message(botId: str, request: SendMessageRequest):
         logger.error(f"Error sending message: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/hook")
-async def zalo_hook(request: Request, platform: str = "zalo"):
+@app.post("/api/hook", response_model=GenericResponse, tags=["Webhooks"], summary="Zalo message hook")
+async def zalo_hook(
+    request: Request,
+    platform: str = Query("zalo", description="The platform type (currently only zalo supported)")
+):
+    """
+    Webhook endpoint to receive messages from Zalo.
+    Messages are formatted and pushed to a Celery task for processing.
+    """
     if platform != "zalo":
          raise HTTPException(status_code=400, detail="Only Zalo platform supported on this hook")
 
