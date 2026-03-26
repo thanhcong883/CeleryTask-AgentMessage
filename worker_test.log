@@ -1,0 +1,27 @@
+
+ -------------- celery@devbox v5.6.2 (recovery)
+--- ***** -----
+-- ******* ---- Linux-6.8.0-x86_64-with-glibc2.39 2026-03-26 14:12:43
+- *** --- * ---
+- ** ---------- [config]
+- ** ---------- .> app:         my_app:0x7f8cd1ca9220
+- ** ---------- .> transport:   redis://default:**@127.0.0.1:6379/3
+- ** ---------- .> results:     disabled://
+- *** --- * --- .> concurrency: 1 (prefork)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** -----
+ -------------- [queues]
+                .> celery_receive_message exchange=celery_receive_message(direct) key=celery_receive_message
+
+
+[tasks]
+  . task.agent_message
+  . tasks.new_msg
+  . tasks.send_message
+
+[2026-03-26 14:12:43,816: INFO/MainProcess] Connected to redis://default:**@127.0.0.1:6379/3
+[2026-03-26 14:12:43,827: INFO/MainProcess] mingle: searching for neighbors
+[2026-03-26 14:12:44,859: INFO/MainProcess] mingle: all alone
+[2026-03-26 14:12:44,890: INFO/MainProcess] celery@devbox ready.
+
+worker: Warm shutdown (MainProcess)
