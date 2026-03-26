@@ -3,7 +3,7 @@ import logging
 import threading
 from typing import Dict, Any, Optional, Union, List
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, Path, Query
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, Path, Query, Response
 from pydantic import BaseModel, Field
 import redis
 import requests
@@ -164,6 +164,12 @@ def get_zalo_status(bot_id: str):
     response = requests.get(url, timeout=10)
     response.raise_for_status()
     return response.json()
+def get_zalo_qr_code(bot_id: str):
+    url = f"{config.ZALO_EXTERNAL_API_BASE}/qr/{bot_id}.png"
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    return response.content
+
 
 # --- API Endpoints ---
 
@@ -222,6 +228,15 @@ async def create_bot(request: CreateBotRequest):
         except Exception as e:
             logger.error(f"Error creating Zalo bot: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to create Zalo bot: {str(e)}")
+    elif platform == "whatapps":
+        try:
+            create_zalo_account(bot_id)
+            config_zalo_webhook(bot_id)
+            return {"status": "ok", "message": "WhatsApp bot created and webhook configured"}
+        except Exception as e:
+            logger.error(f"Error creating WhatsApp bot: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create WhatsApp bot: {str(e)}")
+
 
     else:
         raise HTTPException(status_code=400, detail=f"Platform {platform} not supported yet")
@@ -273,7 +288,35 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
         except Exception as e:
             return {"status": "down", "platform": "zalo", "error": str(e)}
 
+    elif platform == "whatapps":
+        try:
+            status_data = get_zalo_status(botId)
+            return {"status": status_data.get("status", "unknown"), "platform": "whatapps", "details": status_data}
+        except Exception as e:
+            return {"status": "down", "platform": "whatapps", "error": str(e)}
+
     return {"status": "unknown", "platform": platform}
+@app.get("/api/bots/{botId}/qrcode.png", tags=["Bots"], summary="Get QR code for bot authentication")
+async def get_bot_qrcode(botId: str = Path(..., description="The ID of the bot")):
+    """
+    Returns a PNG QR code for bot authentication. Currently only supported for Zalo.
+    """
+    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    if not bot_config:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    platform = bot_config.get("platform")
+
+    if platform in ["zalo", "whatapps"]:
+        try:
+            qr_content = get_zalo_qr_code(botId)
+            return Response(content=qr_content, media_type="image/png")
+        except Exception as e:
+            logger.error(f"Error fetching QR code for platform {platform} for bot {botId}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch QR code: {str(e)}")
+    else:
+        raise HTTPException(status_code=400, detail=f"QR code authentication not supported for platform {platform}")
+
 
 @app.post("/api/bots/{botId}/send", response_model=Dict[str, Any], tags=["Bots"], summary="Send a message")
 async def send_bot_message(
