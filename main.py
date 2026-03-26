@@ -228,6 +228,9 @@ async def create_bot(request: CreateBotRequest):
     - **Zalo**: Creates an account on the external system and configures a webhook.
     """
     bot_id = str(request.botId)
+    if redis_client.exists(f"bot_config:{bot_id}"):
+        return {"status": "ok", "message": f"Bot {bot_id} already exists"}
+
     platform = request.options.platform.lower()
     token = request.options.token
 
