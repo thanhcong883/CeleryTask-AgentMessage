@@ -1,28 +1,37 @@
-/app/main.py:189: DeprecationWarning:
+/root/agent-messages/main.py:189: DeprecationWarning: 
         on_event is deprecated, use lifespan event handlers instead.
 
         Read more about it in the
         [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
-
+        
   @app.on_event("startup")
-INFO:     Started server process [6960]
+INFO:     Started server process [280788]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:58726 - "GET /docs HTTP/1.1" 200 OK
-2026-03-26 14:12:45,322 - __main__ - INFO - Starting Telegram bot pytest_tg_bot listener
-INFO:     127.0.0.1:41832 - "POST /api/bots HTTP/1.1" 200 OK
-2026-03-26 14:12:45,818 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8685270318:AAF-9MOlE2qZ4aphAp4GpwoRZyHMaqXkpPY/getMe "HTTP/1.1 200 OK"
-2026-03-26 14:12:45,820 - telegram.ext.Application - INFO - Application started
-2026-03-26 14:12:45,937 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8685270318:AAF-9MOlE2qZ4aphAp4GpwoRZyHMaqXkpPY/deleteWebhook "HTTP/1.1 200 OK"
-INFO:     127.0.0.1:41838 - "GET /api/bots/pytest_tg_bot/status HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41842 - "DELETE /api/bots/pytest_tg_bot HTTP/1.1" 200 OK
-INFO:     127.0.0.1:41848 - "GET /api/bots/pytest_tg_bot/status HTTP/1.1" 404 Not Found
-2026-03-26 14:12:47,703 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8685270318:AAF-9MOlE2qZ4aphAp4GpwoRZyHMaqXkpPY/getUpdates "HTTP/1.1 200 OK"
-2026-03-26 14:12:47,705 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
-2026-03-26 14:12:47,705 - telegram.ext.Application - INFO - Application.stop() complete
-2026-03-26 14:12:47,707 - __main__ - INFO - Stopped Telegram bot pytest_tg_bot listener
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [6960]
+INFO:     127.0.0.1:35180 - "GET /docs HTTP/1.1" 200 OK
+2026-03-26 14:56:28,841 - provider - INFO - Sending Zalo message through external API with data: {'bot_id': 'kien', 'token': '***', 'content': 'TEST START: Please reply with the following exact text to this group within 5 minutes:\n\nTEST-ZALO-fa354027', 'user_id': None, 'group_id': '3739163992970418355', 'type': 'group'}
+2026-03-26 14:56:29,008 - provider - INFO - Successfully sent Zalo message via external API.
+INFO:     127.0.0.1:35244 - "POST /api/bots/kien/send HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35252 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35384 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35490 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35642 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35746 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35896 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36012 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36418 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36574 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36716 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36848 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36976 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37090 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37214 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37332 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37474 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37586 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37728 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38254 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38408 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38558 - "GET /api/messages HTTP/1.1" 200 OK

@@ -36,7 +36,7 @@ def server_process():
 @pytest.fixture(scope="session")
 def worker_process():
     """Starts the Celery worker for the duration of the test session."""
-    cmd = ["celery", "-A", "tasks", "worker", "--loglevel=info", "-Q", "celery_receive_message", "--concurrency=1"]
+    cmd = ["celery", "-A", "tasks", "worker", "--loglevel=info", "-Q", "celery_receive_message,celery_send_message,celery_agent_message", "--concurrency=1"]
     log_file = open("worker_test.log", "w")
     process = subprocess.Popen(cmd, stdout=log_file, stderr=log_file, preexec_fn=os.setsid)
     
@@ -57,5 +57,7 @@ def test_env():
     return {
         "token": os.getenv("TEST_TELEGRAM_TOKEN"),
         "token_2": os.getenv("TEST_TELEGRAM_TOKEN_2"),
-        "group_id": os.getenv("TEST_TELEGRAM_GROUP")
+        "group_id": os.getenv("TEST_TELEGRAM_GROUP"),
+        "zalo_bot_id": os.getenv("TEST_ZALO_BOT_ID", "kien"),
+        "zalo_group_id": os.getenv("TEST_ZALO_GROUP")
     }

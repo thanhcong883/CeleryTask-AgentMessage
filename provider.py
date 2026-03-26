@@ -73,13 +73,17 @@ class ZaloProvider:
              logger.error("No bot_id provided for Zalo message send.")
              raise ValueError("bot_id is required for Zalo messages")
 
-        url = f"{config.ZALO_EXTERNAL_API_BASE}/api/bots/{bot_id}/send"
+        url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/send"
+
+        # Map types: 'private' -> 'user'
+        msg_type = data.get("type", "user")
+        if msg_type == "private":
+            msg_type = "user"
 
         payload = {
-            "content": data.get("content"),
-            "user_id": data.get("user_id"),
-            "group_id": data.get("group_id"),
-            "type": data.get("type", "private"),
+            "text": data.get("content"),
+            "threadId": data.get("group_id") or data.get("user_id"),
+            "type": msg_type,
         }
 
         try:

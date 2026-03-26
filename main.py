@@ -161,7 +161,7 @@ def start_bot_thread(bot_id: str, token: str):
 
 def create_zalo_account(bot_id: str):
     url = f"{config.ZALO_EXTERNAL_API_BASE}/api/accounts"
-    response = requests.post(url, json={"botId": bot_id}, timeout=10)
+    response = requests.post(url, json={"accountId": bot_id}, timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -319,14 +319,16 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
     elif platform == "zalo":
         try:
             status_data = get_zalo_status(botId)
-            return {"status": status_data.get("status", "unknown"), "platform": "zalo", "details": status_data}
+            status = "up" if status_data.get("isAuthenticated") else "down"
+            return {"status": status, "platform": "zalo", "details": status_data}
         except Exception as e:
             return {"status": "down", "platform": "zalo", "error": str(e)}
 
     elif platform == "whatapps":
         try:
             status_data = get_zalo_status(botId)
-            return {"status": status_data.get("status", "unknown"), "platform": "whatapps", "details": status_data}
+            status = "up" if status_data.get("isAuthenticated") else "down"
+            return {"status": status, "platform": "whatapps", "details": status_data}
         except Exception as e:
             return {"status": "down", "platform": "whatapps", "error": str(e)}
 

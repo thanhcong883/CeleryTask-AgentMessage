@@ -23,5 +23,5 @@ else
 fi
 
 echo "All services stopped."
-rm server_test.log
-rm worker_test.log
+rm -f server_test.log
+rm -f worker_test.log
