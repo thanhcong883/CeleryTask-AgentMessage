@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 import redis
 import requests
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, ExtBot
 
 import config
 from tasks import process_message
@@ -81,13 +81,36 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
     logger.info(f"Received Telegram message from {data['platform_user_id']}")
     process_message.delay(data)
 
+
+# Mapping from token to bot_id for health monitoring
+token_to_bot_id: Dict[str, str] = {}
+
+class MonitoredBot(ExtBot):
+    async def get_updates(self, *args, **kwargs):
+        bot_id = token_to_bot_id.get(self.token)
+        try:
+            updates = await super().get_updates(*args, **kwargs)
+            if bot_id and bot_id in telegram_bots:
+                telegram_bots[bot_id]["status"] = "up"
+                telegram_bots[bot_id]["error"] = None
+            return updates
+        except Exception as e:
+            logger.error(f"Error in get_updates for bot {bot_id}: {e}")
+            if bot_id and bot_id in telegram_bots:
+                telegram_bots[bot_id]["status"] = "down"
+                telegram_bots[bot_id]["error"] = str(e)
+            raise
+
 async def run_telegram_bot(bot_id: str, token: str, stop_event: asyncio.Event):
     logger.info(f"Starting Telegram bot {bot_id} listener")
     try:
-        application = ApplicationBuilder().token(token).build()
+        token_to_bot_id[token] = bot_id
+        bot = MonitoredBot(token)
+        application = ApplicationBuilder().bot(bot).build()
         application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), telegram_message_handler))
 
         await application.initialize()
+
         await application.start()
         await application.updater.start_polling()
 
@@ -108,7 +131,7 @@ def start_bot_thread(bot_id: str, token: str):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         stop_event = asyncio.Event()
-        telegram_bots[bot_id] = {"loop": loop, "stop_event": stop_event}
+        telegram_bots[bot_id] = {"loop": loop, "stop_event": stop_event, "status": "wait", "error": None}
         try:
             loop.run_until_complete(run_telegram_bot(bot_id, token, stop_event))
         finally:
@@ -223,8 +246,14 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
     platform = bot_config.get("platform")
 
     if platform == "telegram":
-        is_up = botId in telegram_bots
-        return {"status": "up" if is_up else "down", "platform": "telegram"}
+        bot_info = telegram_bots.get(botId)
+        if bot_info:
+            return {
+                "status": bot_info.get("status", "up"),
+                "platform": "telegram",
+                "details": {"error": bot_info.get("error")}
+            }
+        return {"status": "down", "platform": "telegram"}
 
     elif platform == "zalo":
         try:
