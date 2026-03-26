@@ -1,0 +1,24 @@
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [4012]
+2026-03-26 05:22:28,926 - __main__ - WARNING - Failed to connect to Redis, using MockRedis for testing
+/app/main.py:154: DeprecationWarning:
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+  @app.on_event("startup")
+INFO:     Started server process [4278]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-03-26 05:22:29,629 - __main__ - INFO - Would start Telegram bot thread for test_bot_1
+INFO:     127.0.0.1:58570 - "POST /api/bots HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /api/bots/test_bot_1/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58596 - "DELETE /api/bots/test_bot_1 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [4278]

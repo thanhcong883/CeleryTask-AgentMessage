@@ -13,65 +13,15 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - celery_network
+      - bot_network
 
-  celery_worker_receive:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: celery_worker_receive
-    command: celery --app=tasks worker --loglevel=info -Q celery_receive_message --concurrency=2
-    volumes:
-      - .:/app
-    depends_on:
-      redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - celery_network
-
-  celery_worker_send:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: celery_worker_send
-    command: celery --app=tasks worker --loglevel=info -Q celery_send_message --concurrency=2
-    volumes:
-      - .:/app
-    depends_on:
-      redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - celery_network
-
-  celery_worker_agent:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: celery_worker_agent
-    command: celery --app=tasks worker --loglevel=info -Q celery_agent_message --concurrency=2
-    volumes:
-      - .:/app
-    depends_on:
-      redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - celery_network
-
-  celery_beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: celery_beat
-    command: celery -A tasks beat --loglevel=info --scheduler celery.beat.PersistentScheduler
+    container_name: bot_management_app
+    ports:
+      - "8000:8000"
     volumes:
       - .:/app
       - celery_beat_data:/app/celerybeat-schedule
@@ -82,11 +32,12 @@ services:
       - .env
     restart: unless-stopped
     networks:
-      - celery_network
+      - bot_network
 
- 
 volumes:
   redis_data:
-  celery_beat_data:networks:
-  celery_network:
+  celery_beat_data:
+
+networks:
+  bot_network:
     driver: bridge
