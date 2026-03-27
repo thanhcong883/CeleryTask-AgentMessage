@@ -1,0 +1,192 @@
+import logging
+from typing import Dict, Any, List
+from fastapi import APIRouter, HTTPException, Body, Path, Response
+from models import CreateBotRequest, BotStatusResponse, GenericResponse, SendMessageRequest
+from database import redis_client
+from zalo_service import sync_zalo_webhook, get_zalo_status, get_zalo_qr_code
+from telegram_service import telegram_bots, start_bot_thread
+import config
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/bots", tags=["Bots"])
+
+@router.get("", summary="List all configured bots")
+async def list_bots():
+    """Retrieves all bot configurations stored in Redis."""
+    try:
+        keys = redis_client.keys("bot_config:*")
+        bots = []
+        for key in keys:
+            bot_id = key.split(":")[-1]
+            config_data = redis_client.hgetall(key)
+            bots.append({"botId": bot_id, "config": config_data})
+        return {"status": "ok", "bots": bots}
+    except Exception as e:
+        logger.error(f"Failed to list bots: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+@router.post("", summary="Create a new bot")
+async def create_bot(request: CreateBotRequest):
+    """
+    Initialize a new bot on the specified platform.
+    """
+    bot_id = str(request.botId)
+    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
+    base_url = config.BASE_URL
+
+    if bot_config:
+        if bot_config.get("platform") == "zalo":
+             sync_zalo_webhook(bot_id, base_url)
+        return {"status": "ok", "message": f"Bot {bot_id} already exists"}
+
+    platform = request.options.platform.lower()
+    token = request.options.token
+
+    try:
+        redis_client.hset(f"bot_config:{bot_id}", mapping={
+            "platform": platform,
+            "token": token or ""
+        })
+    except Exception as e:
+        logger.error(f"Failed to save to Redis: {e}")
+        raise HTTPException(status_code=500, detail="Database connection error")
+
+    if platform == "telegram":
+        if not token:
+            raise HTTPException(status_code=400, detail="Token is required for Telegram")
+        if bot_id in telegram_bots:
+            if telegram_bots[bot_id].get("status") == "down":
+                del telegram_bots[bot_id]
+            else:
+                return {"status": "ok", "message": "Telegram bot listener already running"}
+
+        start_bot_thread(bot_id, token)
+        return {"status": "ok", "message": "Telegram bot listener started"}
+
+    elif platform == "zalo":
+        try:
+            sync_zalo_webhook(bot_id, base_url)
+            return {"status": "ok", "message": "Zalo bot created and webhook configured"}
+        except Exception as e:
+            logger.error(f"Error creating Zalo bot: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create Zalo bot: {str(e)}")
+    elif platform == "whatapps":
+        try:
+            sync_zalo_webhook(bot_id, base_url)
+            return {"status": "ok", "message": "WhatsApp bot created and webhook configured"}
+        except Exception as e:
+            logger.error(f"Error creating WhatsApp bot: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create WhatsApp bot: {str(e)}")
+    else:
+        raise HTTPException(status_code=400, detail=f"Platform {platform} not supported yet")
+
+@router.delete("/{botId}", response_model=GenericResponse, summary="Delete a bot")
+async def delete_bot(botId: str = Path(..., description="The ID of the bot to delete")):
+    """Removes a bot's configuration and stops any active listeners (for Telegram)."""
+    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    if not bot_config:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    platform = bot_config.get("platform")
+
+    if platform == "telegram":
+        bot_info = telegram_bots.get(botId)
+        if bot_info:
+            if not bot_info["loop"].is_closed():
+                bot_info["loop"].call_soon_threadsafe(bot_info["stop_event"].set)
+
+    redis_client.delete(f"bot_config:{botId}")
+    return {"status": "ok", "message": f"Bot {botId} deleted"}
+
+@router.get("/{botId}/status", response_model=BotStatusResponse, summary="Get bot status")
+async def get_bot_status(botId: str = Path(..., description="The ID of the bot to check")):
+    """Checks if the bot's listener is active (for Telegram) or gets status from the external API (for Zalo)."""
+    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    if not bot_config:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    platform = bot_config.get("platform")
+
+    if platform == "telegram":
+        bot_info = telegram_bots.get(botId)
+        if bot_info:
+            details = (bot_info.get("details") or {}).copy()
+            if "error" not in details:
+                details["error"] = bot_info.get("error")
+            return {
+                "status": bot_info.get("status", "up"),
+                "platform": "telegram",
+                "details": details
+            }
+        return {"status": "down", "platform": "telegram"}
+
+    elif platform == "zalo":
+        try:
+            status_data = get_zalo_status(botId)
+            status = "up" if status_data.get("isAuthenticated") else "down"
+            return {"status": status, "platform": "zalo", "details": status_data}
+        except Exception as e:
+            return {"status": "down", "platform": "zalo", "error": str(e)}
+
+    elif platform == "whatapps":
+        try:
+            status_data = get_zalo_status(botId)
+            status = "up" if status_data.get("isAuthenticated") else "down"
+            return {"status": status, "platform": "whatapps", "details": status_data}
+        except Exception as e:
+            return {"status": "down", "platform": "whatapps", "error": str(e)}
+
+    return {"status": "unknown", "platform": platform}
+
+@router.get("/{botId}/qrcode.png", summary="Get QR code for bot authentication")
+async def get_bot_qrcode(botId: str = Path(..., description="The ID of the bot")):
+    """
+    Returns a PNG QR code for bot authentication. Currently only supported for Zalo.
+    """
+    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    if not bot_config:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    platform = bot_config.get("platform")
+
+    if platform in ["zalo", "whatapps"]:
+        try:
+            qr_content = get_zalo_qr_code(botId)
+            return Response(content=qr_content, media_type="image/png")
+        except Exception as e:
+            logger.error(f"Error fetching QR code for platform {platform} for bot {botId}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch QR code: {str(e)}")
+    else:
+        raise HTTPException(status_code=400, detail=f"QR code authentication not supported for platform {platform}")
+
+@router.post("/{botId}/send", response_model=Dict[str, Any], summary="Send a message")
+async def send_bot_message(
+    botId: str = Path(..., description="The ID of the bot to send the message from"),
+    request: SendMessageRequest = Body(...)
+):
+    """Sends a message through the specified bot using the appropriate platform provider."""
+    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    if not bot_config:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    from provider import PROVIDERS
+
+    platform_name = bot_config.get("platform").capitalize()
+    if platform_name not in PROVIDERS:
+         raise HTTPException(status_code=400, detail=f"No provider for {platform_name}")
+
+    send_data = {
+        "bot_id": botId,
+        "token": bot_config.get("token"),
+        "content": request.content,
+        "user_id": request.user_id,
+        "group_id": request.group_id,
+        "type": request.type,
+    }
+
+    try:
+        result = PROVIDERS[platform_name].send(send_data)
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

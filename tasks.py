@@ -6,7 +6,7 @@ import logging
 from typing import Any, Callable, Optional, Dict, List, Protocol
 
 from celery import Celery
-import redis
+from database import redis_client
 
 from provider import PROVIDERS
 import config
@@ -38,10 +38,6 @@ logger = logging.getLogger(__name__)
 # Initialize Celery app
 app = Celery("my_app", broker=config.REDIS_URL)
 
-# Initialize Redis Client for debouncing and state management
-redis_client = redis.from_url(config.REDIS_URL)
-
-
 def _mask_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
     """Helper to mask tokens in logs."""
     if not isinstance(data, dict):
@@ -52,84 +48,50 @@ def _mask_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe_data
 
 
-# =============================================================================
-# Message Handlers
-# =============================================================================
-
-
 def handle_send_message(
-    data: Dict[str, Any],
-    callback: Optional[Callable[[str, Dict[str, Any], Any], None]] = None,
-) -> None:
+    data: Dict[str, Any], callback: Optional[Callable[[str, Dict[str, Any], Any], None]] = None
+) -> Any:
     """
-    Send message through the appropriate platform provider.
-
-    Args:
-        data: Message data containing platform_id and message content
-        callback: Optional callback function to execute on success
+    Logic to send message to platform and call success callback.
     """
-    platform: Optional[str] = data.get("platform_name")
-    if not platform:
-        logger.error("Platform name missing in message data")
-        return
-
-    provider: Optional[Provider] = PROVIDERS.get(platform.title())
-    if not provider:
-        logger.error("Platform '%s' not supported", platform)
-        return
+    platform = data.get("platform_name")
+    if platform not in PROVIDERS:
+        logger.error("Platform %s not supported for sending", platform)
+        return None
 
     try:
-        logger.info("Sending message via %s: %s", platform, _mask_sensitive_data(data))
-        result = provider.send(data)
+        # data may contains token, use it if available
+        # if not, provider should handle it (e.g. from config)
+        result = PROVIDERS[platform].send(data)
+
         if callback:
             callback(platform, data, result)
-        logger.info("Message sent successfully via %s", platform)
+
+        return result
     except Exception as e:
-        logger.error("Failed to send message via %s: %s", platform, e, exc_info=True)
+        logger.error("Failed to send message to %s: %s", platform, e)
+        return None
 
 
-# =============================================================================
-# Celery Tasks
-# =============================================================================
-
-
-@app.task(name="task.agent_message", queue="celery_agent_message")
+@app.task(name="tasks.check_agent_answer", queue="celery_receive_message")
 def check_agent_answer(data: Dict[str, Any]) -> None:
     """
-    Check if agent can answer the question and notify admins if needed.
-
-    Args:
-        data: Contains conversation, message_id, content, and notification settings
+    Celery task to check if an agent should answer a question.
     """
     conversation_id = data.get("conversation")
     message_id = data.get("message_id")
-    content = data.get("content")
 
-    if not conversation_id or not message_id or not content:
-        logger.error("Required fields missing in agent message data")
-        return
-
-    # Check if this task is processing the *latest* message in the conversation.
-    # If a newer message has arrived while this task was waiting in the queue, skip this one.
+    # DEBOUNCE CHECK:
+    # Only proceed if this is still the latest message from the user.
     latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
-    if latest_msg_id and latest_msg_id.decode("utf-8") != str(message_id):
+    if latest_msg_id and str(latest_msg_id) != str(message_id):
         logger.info(
-            "Skipping task for msg %s because a newer msg %s arrived for conversation %s",
-            message_id,
-            latest_msg_id.decode("utf-8"),
-            conversation_id,
-        )
-        return
-
-    # Skip agent check if an admin has recently been active
-    if redis_client.get(f"admin_active:{conversation_id}"):
-        logger.info(
-            "Admin active, skipping agent check for conversation %s", conversation_id
+            "Newer message (%s) exists for conversation %s, skipping agent check for %s",
+            latest_msg_id, conversation_id, message_id
         )
         return
 
     # If the bot is currently processing an answer for another message, we can choose to skip or wait.
-    # We skip here to avoid parallel bot answers if a previous one hasn't finished.
     if redis_client.get(f"bot_processing:{conversation_id}"):
         logger.info(
             "Bot is currently processing another answer for %s. Skipping this check.",
@@ -149,13 +111,12 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
         "history_chat": build_history_chat(history),
     }
 
-    # Set processing lock right before calling the slow AI API.
-    # This prevents parallel calls if messages arrived at the exact same millisecond.
+    # Set processing lock
     redis_client.setex(f"bot_processing:{conversation_id}", 60, "1")
 
     agent_response = call_agent_webhook(agent_payload)
 
-    # Release processing lock so the bot is ready for the next message
+    # Release processing lock
     redis_client.delete(f"bot_processing:{conversation_id}")
 
     if not agent_response:
@@ -223,9 +184,6 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
 def process_message(data: Dict[str, Any]) -> None:
     """
     Process incoming message: sync to backend and check if agent assistance is needed.
-
-    Args:
-        data: Incoming message data from platform
     """
     logger.info("Processing incoming message for %s", data.get("platform_name"))
 
@@ -291,15 +249,8 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # NEW DEBOUNCE LOGIC:
-    # Set the latest message ID for this conversation. If a new message comes in,
-    # it overwrites this key. The `check_agent_answer` task will verify this key before proceeding.
-    # Expiry is set to a reasonable time (e.g., 1 hour) just to clean up Redis.
     redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
     logger.info("Set latest user message for %s to %s", conversation_id, message_id)
-
-    # Note: We removed the `bot_processing:{conversation_id}` lock from here.
-    # It allows new messages to be scheduled, effectively resetting the agent check
-    # timer since the old tasks will see `latest_user_message` has changed and abort themselves.
 
     # Check if the question needs agent processing
     _schedule_agent_check(data, conversation_id, message_id, conversation_info)
@@ -363,10 +314,6 @@ def send_message(
 ) -> None:
     """
     Send message and update Strapi with the result.
-
-    Args:
-        data: Message data to send
-        data_send: Optional data for bot-sent message logging
     """
 
     def on_success_callback(
