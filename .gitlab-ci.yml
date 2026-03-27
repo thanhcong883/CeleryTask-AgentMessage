@@ -98,6 +98,8 @@ upgrade_k8s:
 
 notify_success:
   image: alpine
+  needs:
+    - upgrade_k8s
   stage: notify_success
   before_script:
     - apk add --no-cache curl jq
@@ -116,6 +118,8 @@ notify_success:
 
 notify_failure:
   image: alpine
+  needs:
+    - upgrade_k8s
   stage: notify_failure
   before_script:
     - apk add --no-cache curl jq
