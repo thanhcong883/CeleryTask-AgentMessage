@@ -3,6 +3,7 @@ from fastapi import FastAPI
 import config
 from database import redis_client
 from zalo_service import sync_zalo_webhook
+from telegram_service import start_bot_thread
 from bot_routes import router as bot_router
 from webhook_routes import router as webhook_router
 from message_routes import router as message_router
@@ -36,12 +37,19 @@ async def startup_event():
     """Initializes existing bot configurations from Redis on startup."""
     logger.info("Service starting up...")
     try:
-        # Sync for all Zalo bots
         keys = redis_client.keys("bot_config:*")
         for key in keys:
             bot_data = redis_client.hgetall(key)
-            if bot_data.get("platform") == "zalo":
-                bot_id = key.split(":")[-1]
+            bot_id = key.split(":")[-1]
+            platform = bot_data.get("platform")
+
+            if platform == "telegram":
+                token = bot_data.get("token")
+                if token:
+                    logger.info(f"Starting Telegram bot {bot_id} on startup")
+                    start_bot_thread(bot_id, token)
+            elif platform in ["zalo", "whatapps"]:
+                logger.info(f"Syncing {platform} webhook for {bot_id} on startup")
                 sync_zalo_webhook(bot_id, CONFIG['BASE_URL'])
     except Exception as e:
         logger.error(f"Error during startup sync: {e}")
