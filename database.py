@@ -23,11 +23,10 @@ def get_system_config():
     try:
         stored_config = redis_client.hgetall(CONFIG_REDIS_KEY)
         if not stored_config:
-            # Fallback to config.py and potentially initialize Redis
-            default_config = {
+            # Fallback to config.py values
+            return {
                 "BASE_URL": config.BASE_URL
             }
-            return default_config
         return stored_config
     except Exception as e:
         logger.error(f"Error fetching system config from Redis: {e}")
@@ -37,6 +36,7 @@ def update_system_config(new_config: dict):
     """Updates the system configuration in Redis."""
     try:
         if new_config:
+            # Use hset with mapping to update multiple fields at once
             redis_client.hset(CONFIG_REDIS_KEY, mapping=new_config)
             return True
     except Exception as e:
