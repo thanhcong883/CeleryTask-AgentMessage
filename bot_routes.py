@@ -31,7 +31,7 @@ async def create_bot(request: CreateBotRequest):
     Initialize a new bot on the specified platform.
     """
     bot_id = str(request.botId)
-    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
+    bot_config = redis_client.hgetall(f"bot_config:{botId}")
     base_url = config.BASE_URL
 
     if bot_config:
@@ -41,13 +41,13 @@ async def create_bot(request: CreateBotRequest):
              sync_zalo_webhook(bot_id, base_url)
         elif platform == "telegram" and token:
              sync_telegram_webhook(bot_id, token, base_url)
-        return {"status": "ok", "message": f"Bot {bot_id} already exists and is synced"}
+        return {"status": "ok", "message": f"Bot {botId} already exists and is synced"}
 
     platform = request.options.platform.lower()
     token = request.options.token
 
     try:
-        redis_client.hset(f"bot_config:{bot_id}", mapping={
+        redis_client.hset(f"bot_config:{botId}", mapping={
             "platform": platform,
             "token": token or ""
         })
@@ -115,7 +115,7 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
 
         webhook_info = get_telegram_webhook_info(token)
         if webhook_info.get("ok"):
-            expected_url = f"{base_url}/api/hook?platform=telegram&bot_id={bot_id}"
+            expected_url = f"{base_url}/api/hook?platform=telegram&bot_id={botId}"
             actual_url = webhook_info.get("result", {}).get("url")
             status = "up" if actual_url == expected_url else "down"
             return {
