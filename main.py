@@ -37,6 +37,12 @@ async def startup_event():
     """Initializes existing bot configurations from Redis on startup."""
     logger.info("Service starting up...")
     try:
+        # Clear all Telegram running locks to allow fresh startup
+        running_locks = redis_client.keys("bot_running:*")
+        if running_locks:
+            logger.info(f"Clearing {len(running_locks)} stale Telegram bot locks")
+            redis_client.delete(*running_locks)
+
         keys = redis_client.keys("bot_config:*")
         for key in keys:
             bot_data = redis_client.hgetall(key)
