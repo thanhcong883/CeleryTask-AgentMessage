@@ -89,6 +89,7 @@ upgrade_k8s:
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_RECIVE && helm --kubeconfig=/kube-config/dev/config upgrade celery-recive . -n agent-dev"
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_SEND && helm --kubeconfig=/kube-config/dev/config upgrade celery-send . -n agent-dev"
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_BEAT && helm --kubeconfig=/kube-config/dev/config upgrade celery-beat . -n agent-dev"
+  when: manual
   only:
     - main
   tags:
