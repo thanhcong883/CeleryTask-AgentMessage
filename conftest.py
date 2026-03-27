@@ -138,6 +138,7 @@ def test_env():
         "zalo_bot_id": os.getenv("TEST_ZALO_BOT_ID", "kien"),
         "zalo_group_id": os.getenv("TEST_ZALO_GROUP")
     }
+    
 @pytest.fixture(scope="session")
 def request_with_retry():
     """Returns a helper function to make requests with retries for flaky tunnels."""
@@ -146,7 +147,10 @@ def request_with_retry():
         last_exception = None
         for attempt in range(max_retries):
             try:
-                response = requests.request(method, url, timeout=10, **kwargs)
+                # Use timeout from kwargs if provided, otherwise default to 10
+                timeout = kwargs.pop("timeout", 10)
+                response = requests.request(method, url, timeout=timeout, **kwargs)
+
                 if response.status_code < 500:
                     return response
                 print(f">>> Request {method} {url} returned {response.status_code}. Retrying...")

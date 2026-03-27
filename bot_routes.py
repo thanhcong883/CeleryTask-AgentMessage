@@ -110,7 +110,7 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
     platform = bot_config.get("platform")
     token = bot_config.get("token")
     base_url = config.BASE_URL
-
+    logger.info(f"Current config {base_url}")
     if platform == "telegram":
         if not token:
             return {"status": "down", "platform": "telegram", "error": "No token configured"}

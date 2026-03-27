@@ -28,6 +28,7 @@ def test_telegram_bot_lifecycle(server_process, worker_process, tunnel_url, test
     response = request_with_retry("GET", f"{BASE_URL}/bots/{bot_id}/status")
     assert response.status_code == 200
     data = response.json()
+    print(data)
     assert data["platform"] == "telegram"
     # Status should be "up" if setWebhook call succeeded during creation
     assert data["status"] == "up"

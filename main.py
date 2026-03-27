@@ -38,18 +38,22 @@ def sync_all_bots():
     try:
         keys = redis_client.keys("bot_config:*")
         for key in keys:
-            bot_data = redis_client.hgetall(key)
-            bot_id = key.split(":")[-1]
-            platform = bot_data.get("platform")
-            token = bot_data.get("token")
+            try:
+                bot_data = redis_client.hgetall(key)
+                bot_id = key.split(":")[-1]
+                platform = bot_data.get("platform")
+                token = bot_data.get("token")
 
-            if platform == "telegram":
-                if token:
-                    logger.info(f"Syncing Telegram bot {bot_id} webhook")
-                    sync_telegram_webhook(bot_id, token, CONFIG['BASE_URL'])
-            elif platform in ["zalo", "whatapps"]:
-                logger.info(f"Syncing {platform} webhook for {bot_id}")
-                sync_zalo_webhook(bot_id, CONFIG['BASE_URL'])
+                if platform == "telegram":
+                    if token:
+                        logger.info(f"Syncing Telegram bot {bot_id} webhook")
+                        sync_telegram_webhook(bot_id, token, CONFIG['BASE_URL'])
+                elif platform in ["zalo", "whatapps"]:
+                    logger.info(f"Syncing {platform} webhook for {bot_id}")
+                    sync_zalo_webhook(bot_id, CONFIG['BASE_URL'])
+            except Exception as bot_err:
+                logger.error(f"Error syncing bot {key}: {bot_err}")
+
     except Exception as e:
         logger.error(f"Error during bot sync: {e}")
 
