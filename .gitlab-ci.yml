@@ -1,0 +1,106 @@
+include:
+  - project: 'devops/cicd'
+    ref: 'master'
+    file: 'base/remove-img-old.yml'
+stages:
+  - build
+  - deploy
+  - notify_success
+  - notify_failure
+  - remove_image_old
+.build_template:
+  before_script:
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest || true
+    - docker build --cache-from $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest -t $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery -t $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery
+  after_script:
+    - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.celery.latest
+    - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery
+    - docker rmi $(docker images -f "dangling=true" -q) || true
+
+build_image_dev:
+  stage: build
+  extends: .build_template
+  only:
+    - dev
+  tags:
+    - evg
+
+deploy_dev:
+  stage: deploy
+  image: alpine:latest
+  variables:
+    PROJECT_DIR: '/root/agent-messages'
+  before_script:
+    - apk add --no-cache openssh-client
+    - chmod 600 "$SSH_PRIVATE_KEY_DEV" || true
+  script:
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose down"
+
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_receive.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_send.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_agent.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_beat.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose up -d"
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose ps -a"
+  after_script:
+    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "docker image prune -a -f"
+  only:
+    - dev
+  tags:
+    - evg
+
+prune_img_old:
+  stage: remove_image_old
+  extends:
+    - .remove-img
+  environment:
+    name: dev
+  variables:
+    GITOPS_SECRET: huyabc321
+    GITOPS: http://img-old-delete-img-old.argocd/delete
+  only:
+    - dev
+  tags:
+    - k8s-dev
+
+notify_success:
+  image: alpine
+  stage: notify_success
+  before_script:
+    - apk add --no-cache curl jq
+  variables:
+    CHAT_ID: "-4916051911"
+    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
+  script:
+    - |
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ ${CI_PROJECT_NAME} pipeline succeed on branch ${CI_COMMIT_REF_NAME} of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+  when: on_success
+  only:
+    - dev
+  tags:
+    - evg
+
+
+notify_failure:
+  image: alpine
+  stage: notify_failure
+  before_script:
+    - apk add --no-cache curl jq
+  variables:
+    CHAT_ID: "-4916051911"
+    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
+  script:
+    - |
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \" ❌ Project: $CI_PROJECT_NAME $JOB_NAME false on branch ${CI_COMMIT_REF_NAME} of ${CI_COMMIT_MESSAGE} \"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+  when: on_failure
+  allow_failure: false
+  only:
+    - dev
+  tags:
+    - evg
