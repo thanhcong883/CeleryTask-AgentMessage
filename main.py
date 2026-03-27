@@ -3,7 +3,7 @@ from fastapi import FastAPI
 import config
 from database import redis_client
 from zalo_service import sync_zalo_webhook
-from telegram_service import start_bot_thread
+from telegram_service import sync_telegram_webhook
 from bot_routes import router as bot_router
 from webhook_routes import router as webhook_router
 from message_routes import router as message_router
@@ -32,33 +32,38 @@ app.include_router(bot_router)
 app.include_router(webhook_router)
 app.include_router(message_router)
 
-@app.on_event("startup")
-async def startup_event():
-    """Initializes existing bot configurations from Redis on startup."""
-    logger.info("Service starting up...")
+def sync_all_bots():
+    """Syncs webhook configuration for all bots in Redis."""
+    logger.info("Syncing all bots...")
     try:
-        # Clear all Telegram running locks to allow fresh startup
-        running_locks = redis_client.keys("bot_running:*")
-        if running_locks:
-            logger.info(f"Clearing {len(running_locks)} stale Telegram bot locks")
-            redis_client.delete(*running_locks)
-
         keys = redis_client.keys("bot_config:*")
         for key in keys:
             bot_data = redis_client.hgetall(key)
             bot_id = key.split(":")[-1]
             platform = bot_data.get("platform")
+            token = bot_data.get("token")
 
             if platform == "telegram":
-                token = bot_data.get("token")
                 if token:
-                    logger.info(f"Starting Telegram bot {bot_id} on startup")
-                    start_bot_thread(bot_id, token)
+                    logger.info(f"Syncing Telegram bot {bot_id} webhook")
+                    sync_telegram_webhook(bot_id, token, CONFIG['BASE_URL'])
             elif platform in ["zalo", "whatapps"]:
-                logger.info(f"Syncing {platform} webhook for {bot_id} on startup")
+                logger.info(f"Syncing {platform} webhook for {bot_id}")
                 sync_zalo_webhook(bot_id, CONFIG['BASE_URL'])
     except Exception as e:
-        logger.error(f"Error during startup sync: {e}")
+        logger.error(f"Error during bot sync: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    """Initializes existing bot configurations from Redis on startup."""
+    logger.info("Service starting up...")
+    # Clear all Telegram running locks as they are no longer used
+    running_locks = redis_client.keys("bot_running:*")
+    if running_locks:
+        logger.info(f"Clearing {len(running_locks)} stale Telegram bot locks")
+        redis_client.delete(*running_locks)
+
+    sync_all_bots()
 
 @app.get("/", tags=["General"])
 async def root():
@@ -71,8 +76,9 @@ async def get_config():
 
 @app.post("/api/config", tags=["System"])
 async def update_runtime_config(new_config: dict):
-    """Updates the runtime configuration (e.g., BASE_URL)."""
+    """Updates the runtime configuration (e.g., BASE_URL) and re-syncs all bots."""
     CONFIG.update(new_config)
+    sync_all_bots()
     return {"status": "ok", "config": CONFIG}
 
 if __name__ == "__main__":
