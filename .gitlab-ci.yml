@@ -40,18 +40,18 @@ deploy_dev:
     - echo "$SSH_PRIVATE_KEY_DEV" > ~/.ssh/id_rsa
     - chmod 600 ~/.ssh/id_rsa
   script:
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose down"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose down"
 
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_receive.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_send.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_receive.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_send.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
 
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_agent.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_beat.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_agent.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_beat.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
 
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose up -d"
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose ps -a"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose up -d"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose ps -a"
   after_script:
-    - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "docker image prune -a -f"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "docker image prune -a -f"
   only:
     - dev
   tags:
