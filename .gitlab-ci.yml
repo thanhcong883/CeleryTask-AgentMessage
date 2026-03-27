@@ -36,7 +36,9 @@ deploy_dev:
     PROJECT_DIR: '/root/agent-messages'
   before_script:
     - apk add --no-cache openssh-client
-    - chmod 600 "$SSH_PRIVATE_KEY_DEV" || true
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY_DEV" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
   script:
     - ssh -i $SSH_PRIVATE_KEY_DEV -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose down"
 
