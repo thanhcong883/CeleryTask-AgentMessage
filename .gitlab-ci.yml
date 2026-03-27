@@ -41,7 +41,7 @@ deploy_dev:
     - chmod 600 ~/.ssh/id_rsa
   script:
     - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "cd $PROJECT_DIR && docker compose down"
-
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.web.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
     - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_receive.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
     - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER_DEV@$SSH_IP_DEV "yq e '.services.celery_worker_send.image = \"$CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"' $PROJECT_DIR/docker-compose.yml -i"
 
