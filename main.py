@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI
 import config
-from database import redis_client
+from database import redis_client, get_system_config, update_system_config, CONFIG_REDIS_KEY
 from zalo_service import sync_zalo_webhook
 from telegram_service import sync_telegram_webhook
 from bot_routes import router as bot_router
@@ -13,11 +13,6 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-# Global configuration that can be updated for testing
-CONFIG = {
-    "BASE_URL": config.BASE_URL
-}
 
 # --- Application Initialization ---
 
@@ -35,6 +30,9 @@ app.include_router(message_router)
 def sync_all_bots():
     """Syncs webhook configuration for all bots in Redis."""
     logger.info("Syncing all bots...")
+    current_config = get_system_config()
+    base_url = current_config.get("BASE_URL")
+
     try:
         keys = redis_client.keys("bot_config:*")
         for key in keys:
@@ -47,10 +45,10 @@ def sync_all_bots():
                 if platform == "telegram":
                     if token:
                         logger.info(f"Syncing Telegram bot {bot_id} webhook")
-                        sync_telegram_webhook(bot_id, token, CONFIG['BASE_URL'])
+                        sync_telegram_webhook(bot_id, token, base_url)
                 elif platform in ["zalo", "whatapps"]:
                     logger.info(f"Syncing {platform} webhook for {bot_id}")
-                    sync_zalo_webhook(bot_id, CONFIG['BASE_URL'])
+                    sync_zalo_webhook(bot_id, base_url)
             except Exception as bot_err:
                 logger.error(f"Error syncing bot {key}: {bot_err}")
 
@@ -61,6 +59,13 @@ def sync_all_bots():
 async def startup_event():
     """Initializes existing bot configurations from Redis on startup."""
     logger.info("Service starting up...")
+
+    # Initialize system configuration in Redis if it doesn't exist
+    if not redis_client.exists(CONFIG_REDIS_KEY):
+        logger.info("Initializing system configuration in Redis")
+        initial_config = {"BASE_URL": config.BASE_URL}
+        update_system_config(initial_config)
+
     # Clear all Telegram running locks as they are no longer used
     running_locks = redis_client.keys("bot_running:*")
     if running_locks:
@@ -76,14 +81,14 @@ async def root():
 @app.get("/config", tags=["General"])
 async def get_config():
     """Returns the current runtime configuration."""
-    return {"status": "ok", "config": CONFIG}
+    return {"status": "ok", "config": get_system_config()}
 
 @app.post("/api/config", tags=["System"])
 async def update_runtime_config(new_config: dict):
     """Updates the runtime configuration (e.g., BASE_URL) and re-syncs all bots."""
-    CONFIG.update(new_config)
+    update_system_config(new_config)
     sync_all_bots()
-    return {"status": "ok", "config": CONFIG}
+    return {"status": "ok", "config": get_system_config()}
 
 if __name__ == "__main__":
     import uvicorn
