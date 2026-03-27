@@ -31,7 +31,7 @@ async def create_bot(request: CreateBotRequest):
     Initialize a new bot on the specified platform.
     """
     bot_id = str(request.botId)
-    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
     base_url = config.BASE_URL
 
     if bot_config:
@@ -41,13 +41,13 @@ async def create_bot(request: CreateBotRequest):
              sync_zalo_webhook(bot_id, base_url)
         elif platform == "telegram" and token:
              sync_telegram_webhook(bot_id, token, base_url)
-        return {"status": "ok", "message": f"Bot {botId} already exists and is synced"}
+        return {"status": "ok", "message": f"Bot {bot_id} already exists and is synced"}
 
     platform = request.options.platform.lower()
     token = request.options.token
 
     try:
-        redis_client.hset(f"bot_config:{botId}", mapping={
+        redis_client.hset(f"bot_config:{bot_id}", mapping={
             "platform": platform,
             "token": token or ""
         })
@@ -85,7 +85,8 @@ async def create_bot(request: CreateBotRequest):
 @router.delete("/{botId}", response_model=GenericResponse, summary="Delete a bot")
 async def delete_bot(botId: str = Path(..., description="The ID of the bot to delete")):
     """Removes a bot's configuration and stops any active listeners (for Telegram)."""
-    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    bot_id = botId
+    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
     if not bot_config:
         raise HTTPException(status_code=404, detail="Bot not found")
 
@@ -95,13 +96,14 @@ async def delete_bot(botId: str = Path(..., description="The ID of the bot to de
     if platform == "telegram" and token:
         delete_telegram_webhook(token)
 
-    redis_client.delete(f"bot_config:{botId}")
-    return {"status": "ok", "message": f"Bot {botId} deleted"}
+    redis_client.delete(f"bot_config:{bot_id}")
+    return {"status": "ok", "message": f"Bot {bot_id} deleted"}
 
 @router.get("/{botId}/status", response_model=BotStatusResponse, summary="Get bot status")
 async def get_bot_status(botId: str = Path(..., description="The ID of the bot to check")):
     """Checks if the bot's listener is active (for Telegram) or gets status from the external API (for Zalo)."""
-    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    bot_id = botId
+    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
     if not bot_config:
         raise HTTPException(status_code=404, detail="Bot not found")
 
@@ -115,7 +117,7 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
 
         webhook_info = get_telegram_webhook_info(token)
         if webhook_info.get("ok"):
-            expected_url = f"{base_url}/api/hook?platform=telegram&bot_id={botId}"
+            expected_url = f"{base_url}/api/hook?platform=telegram&bot_id={bot_id}"
             actual_url = webhook_info.get("result", {}).get("url")
             status = "up" if actual_url == expected_url else "down"
             return {
@@ -127,7 +129,7 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
 
     elif platform == "zalo":
         try:
-            status_data = get_zalo_status(botId)
+            status_data = get_zalo_status(bot_id)
             status = "up" if status_data.get("isAuthenticated") else "down"
             return {"status": status, "platform": "zalo", "details": status_data}
         except Exception as e:
@@ -135,7 +137,7 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
 
     elif platform == "whatapps":
         try:
-            status_data = get_zalo_status(botId)
+            status_data = get_zalo_status(bot_id)
             status = "up" if status_data.get("isAuthenticated") else "down"
             return {"status": status, "platform": "whatapps", "details": status_data}
         except Exception as e:
@@ -148,7 +150,8 @@ async def get_bot_qrcode(botId: str = Path(..., description="The ID of the bot")
     """
     Returns a PNG QR code for bot authentication. Currently only supported for Zalo.
     """
-    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    bot_id = botId
+    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
     if not bot_config:
         raise HTTPException(status_code=404, detail="Bot not found")
 
@@ -156,10 +159,10 @@ async def get_bot_qrcode(botId: str = Path(..., description="The ID of the bot")
 
     if platform in ["zalo", "whatapps"]:
         try:
-            qr_content = get_zalo_qr_code(botId)
+            qr_content = get_zalo_qr_code(bot_id)
             return Response(content=qr_content, media_type="image/png")
         except Exception as e:
-            logger.error(f"Error fetching QR code for platform {platform} for bot {botId}: {e}")
+            logger.error(f"Error fetching QR code for platform {platform} for bot {bot_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch QR code: {str(e)}")
     else:
         raise HTTPException(status_code=400, detail=f"QR code authentication not supported for platform {platform}")
@@ -170,7 +173,8 @@ async def send_bot_message(
     request: SendMessageRequest = Body(...)
 ):
     """Sends a message through the specified bot using the appropriate platform provider."""
-    bot_config = redis_client.hgetall(f"bot_config:{botId}")
+    bot_id = botId
+    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
     if not bot_config:
         raise HTTPException(status_code=404, detail="Bot not found")
 
@@ -181,7 +185,7 @@ async def send_bot_message(
          raise HTTPException(status_code=400, detail=f"No provider for {platform_name}")
 
     send_data = {
-        "bot_id": botId,
+        "bot_id": bot_id,
         "token": bot_config.get("token"),
         "content": request.content,
         "user_id": request.user_id,
