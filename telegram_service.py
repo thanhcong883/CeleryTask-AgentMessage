@@ -3,6 +3,7 @@ import logging
 import threading
 import uuid
 import json
+import hashlib
 from typing import Dict, Any, Optional
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
@@ -89,6 +90,22 @@ async def run_telegram_bot(bot_id: str, token: str, stop_event: asyncio.Event):
                 telegram_bots[bot_id]["status"] = "down"
 
 def start_bot_thread(bot_id: str, token: str):
+    # Use hash of token to create a unique but safe Redis key
+    token_hash = hashlib.md5(token.encode()).hexdigest()
+    lock_key = f"bot_running:{token_hash}"
+
+    # Check if already running in this instance
+    if bot_id in telegram_bots:
+        logger.info(f"Bot {bot_id} already running in this instance")
+        return
+
+    # Atomic check and set in Redis to ensure only one instance per token
+    # We set it with a value (bot_id) and an optional expiry if we wanted,
+    # but for now we keep it simple as requested.
+    if not redis_client.set(lock_key, bot_id, nx=True):
+        logger.warning(f"Telegram bot with this token is already running (locked in Redis key: {lock_key})")
+        return
+
     def run_loop():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -97,6 +114,8 @@ def start_bot_thread(bot_id: str, token: str):
         try:
             loop.run_until_complete(run_telegram_bot(bot_id, token, stop_event))
         finally:
+            # Release Redis lock when bot stops
+            redis_client.delete(lock_key)
             loop.close()
 
     thread = threading.Thread(target=run_loop, daemon=True)
