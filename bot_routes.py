@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Body, Path, Response
 from models import CreateBotRequest, BotStatusResponse, GenericResponse, SendMessageRequest
-from database import redis_client
+from database import redis_client, get_system_config
 from zalo_service import sync_zalo_webhook, get_zalo_status, get_zalo_qr_code
 from telegram_service import sync_telegram_webhook, delete_telegram_webhook, get_telegram_webhook_info
 import config
@@ -31,12 +31,14 @@ async def create_bot(request: CreateBotRequest):
     Initialize a new bot on the specified platform.
     """
     bot_id = str(request.botId)
-    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
-    base_url = config.BASE_URL
+    bot_config_data = redis_client.hgetall(f"bot_config:{bot_id}")
 
-    if bot_config:
-        platform = bot_config.get("platform")
-        token = bot_config.get("token")
+    current_config = get_system_config()
+    base_url = current_config.get("BASE_URL")
+
+    if bot_config_data:
+        platform = bot_config_data.get("platform")
+        token = bot_config_data.get("token")
         if platform == "zalo":
              sync_zalo_webhook(bot_id, base_url)
         elif platform == "telegram" and token:
@@ -86,12 +88,12 @@ async def create_bot(request: CreateBotRequest):
 async def delete_bot(botId: str = Path(..., description="The ID of the bot to delete")):
     """Removes a bot's configuration and stops any active listeners (for Telegram)."""
     bot_id = botId
-    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
-    if not bot_config:
+    bot_config_data = redis_client.hgetall(f"bot_config:{bot_id}")
+    if not bot_config_data:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    platform = bot_config.get("platform")
-    token = bot_config.get("token")
+    platform = bot_config_data.get("platform")
+    token = bot_config_data.get("token")
 
     if platform == "telegram" and token:
         delete_telegram_webhook(token)
@@ -103,13 +105,16 @@ async def delete_bot(botId: str = Path(..., description="The ID of the bot to de
 async def get_bot_status(botId: str = Path(..., description="The ID of the bot to check")):
     """Checks if the bot's listener is active (for Telegram) or gets status from the external API (for Zalo)."""
     bot_id = botId
-    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
-    if not bot_config:
+    bot_config_data = redis_client.hgetall(f"bot_config:{bot_id}")
+    if not bot_config_data:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    platform = bot_config.get("platform")
-    token = bot_config.get("token")
-    base_url = config.BASE_URL
+    platform = bot_config_data.get("platform")
+    token = bot_config_data.get("token")
+
+    current_config = get_system_config()
+    base_url = current_config.get("BASE_URL")
+
     logger.info(f"Current config {base_url}")
     if platform == "telegram":
         if not token:
@@ -151,11 +156,11 @@ async def get_bot_qrcode(botId: str = Path(..., description="The ID of the bot")
     Returns a PNG QR code for bot authentication. Currently only supported for Zalo.
     """
     bot_id = botId
-    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
-    if not bot_config:
+    bot_config_data = redis_client.hgetall(f"bot_config:{bot_id}")
+    if not bot_config_data:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    platform = bot_config.get("platform")
+    platform = bot_config_data.get("platform")
 
     if platform in ["zalo", "whatapps"]:
         try:
@@ -174,19 +179,19 @@ async def send_bot_message(
 ):
     """Sends a message through the specified bot using the appropriate platform provider."""
     bot_id = botId
-    bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
-    if not bot_config:
+    bot_config_data = redis_client.hgetall(f"bot_config:{bot_id}")
+    if not bot_config_data:
         raise HTTPException(status_code=404, detail="Bot not found")
 
     from provider import PROVIDERS
 
-    platform_name = bot_config.get("platform").capitalize()
+    platform_name = bot_config_data.get("platform").capitalize()
     if platform_name not in PROVIDERS:
          raise HTTPException(status_code=400, detail=f"No provider for {platform_name}")
 
     send_data = {
         "bot_id": bot_id,
-        "token": bot_config.get("token"),
+        "token": bot_config_data.get("token"),
         "content": request.content,
         "user_id": request.user_id,
         "group_id": request.group_id,
