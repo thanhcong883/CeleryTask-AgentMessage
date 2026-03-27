@@ -21,7 +21,7 @@ build_image_dev:
   stage: build
   extends: .build_template
   only:
-    - dev
+    - main
   tags:
     - evg
 
@@ -65,7 +65,7 @@ update-image-tag-dev:
     - git push -o ci.skip origin HEAD:main
 
   only:
-    - dev
+    - main
   tags:
     - evg
 
@@ -90,7 +90,7 @@ upgrade_k8s:
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_SEND && helm --kubeconfig=/kube-config/dev/config upgrade celery-send . -n agent-dev"
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_BEAT && helm --kubeconfig=/kube-config/dev/config upgrade celery-beat . -n agent-dev"
   only:
-    - dev
+    - main
   tags:
     - evg
 
@@ -108,7 +108,7 @@ notify_success:
       curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ ${CI_PROJECT_NAME} pipeline succeed on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
   when: on_success
   only:
-    - dev
+    - main
   tags:
     - evg
 
@@ -127,6 +127,6 @@ notify_failure:
   when: on_failure
   allow_failure: false
   only:
-    - dev
+    - main
   tags:
     - evg
