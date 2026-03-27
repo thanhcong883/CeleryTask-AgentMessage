@@ -55,6 +55,12 @@ async def get_config():
     """Returns the current runtime configuration."""
     return {"status": "ok", "config": CONFIG}
 
+@app.post("/api/config", tags=["System"])
+async def update_runtime_config(new_config: dict):
+    """Updates the runtime configuration (e.g., BASE_URL)."""
+    CONFIG.update(new_config)
+    return {"status": "ok", "config": CONFIG}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

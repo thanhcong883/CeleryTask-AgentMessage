@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Body, Path, Response
 from models import CreateBotRequest, BotStatusResponse, GenericResponse, SendMessageRequest
 from database import redis_client
@@ -10,6 +10,21 @@ import config
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots", tags=["Bots"])
 
+@router.get("", summary="List all configured bots")
+async def list_bots():
+    """Retrieves all bot configurations stored in Redis."""
+    try:
+        keys = redis_client.keys("bot_config:*")
+        bots = []
+        for key in keys:
+            bot_id = key.split(":")[-1]
+            config_data = redis_client.hgetall(key)
+            bots.append({"botId": bot_id, "config": config_data})
+        return {"status": "ok", "bots": bots}
+    except Exception as e:
+        logger.error(f"Failed to list bots: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
 @router.post("", summary="Create a new bot")
 async def create_bot(request: CreateBotRequest):
     """
@@ -17,7 +32,7 @@ async def create_bot(request: CreateBotRequest):
     """
     bot_id = str(request.botId)
     bot_config = redis_client.hgetall(f"bot_config:{bot_id}")
-    base_url = config.BASE_URL # Or get from app state if dynamic
+    base_url = config.BASE_URL
 
     if bot_config:
         if bot_config.get("platform") == "zalo":
