@@ -3,7 +3,7 @@ API client utilities for making HTTP requests to backend services.
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 import requests
 from requests.exceptions import RequestException
@@ -16,12 +16,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def _mask_sensitive_data(data: dict) -> dict:
+
+def _mask_sensitive_data(data: Any) -> Any:
     """Mask sensitive data in dict for logging."""
     if not isinstance(data, dict):
         return data
     safe_data = data.copy()
-    if "token" in safe_data: safe_data["token"] = "***"
+    if "token" in safe_data:
+        safe_data["token"] = "***"
     return safe_data
 
 
@@ -36,7 +38,7 @@ JSON_HEADERS = {"Content-Type": "application/json"}
 
 
 def api_get(
-    url: str, headers: Optional[dict] = None, timeout: int = DEFAULT_TIMEOUT
+    url: str, headers: Optional[Dict[str, Any]] = None, timeout: int = DEFAULT_TIMEOUT
 ) -> Optional[requests.Response]:
     """
     Make a GET request with error handling.
@@ -50,20 +52,20 @@ def api_get(
         Response object if successful, None otherwise
     """
     try:
-        logger.info(f"API Request (GET): {url}")
+        logger.info("API Request (GET): %s", url)
         response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
-        logger.info(f"API Response (GET): {url} - Status: {response.status_code}")
+        logger.info("API Response (GET): %s - Status: %s", url, response.status_code)
         return response
     except RequestException as e:
-        logger.error(f"GET request failed for {url}: {e}")
+        logger.error("GET request failed for %s: %s", url, e)
         return None
 
 
 def api_post(
     url: str,
-    json_data: dict,
-    headers: Optional[dict] = None,
+    json_data: Dict[str, Any],
+    headers: Optional[Dict[str, Any]] = None,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> Optional[requests.Response]:
     """
@@ -79,20 +81,22 @@ def api_post(
         Response object if successful, None otherwise
     """
     try:
-        logger.info(f"API Request (POST): {url} - Data: {_mask_sensitive_data(json_data)}")
+        logger.info(
+            "API Request (POST): %s - Data: %s", url, _mask_sensitive_data(json_data)
+        )
         response = requests.post(url, json=json_data, headers=headers, timeout=timeout)
         response.raise_for_status()
-        logger.info(f"API Response (POST): {url} - Status: {response.status_code}")
+        logger.info("API Response (POST): %s - Status: %s", url, response.status_code)
         return response
     except RequestException as e:
-        logger.error(f"POST request failed for {url}: {e}")
+        logger.error("POST request failed for %s: %s", url, e)
         return None
 
 
 def api_put(
     url: str,
-    json_data: dict,
-    headers: Optional[dict] = None,
+    json_data: Dict[str, Any],
+    headers: Optional[Dict[str, Any]] = None,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> Optional[requests.Response]:
     """
@@ -108,13 +112,15 @@ def api_put(
         Response object if successful, None otherwise
     """
     try:
-        logger.info(f"API Request (PUT): {url} - Data: {_mask_sensitive_data(json_data)}")
+        logger.info(
+            "API Request (PUT): %s - Data: %s", url, _mask_sensitive_data(json_data)
+        )
         response = requests.put(url, json=json_data, headers=headers, timeout=timeout)
         response.raise_for_status()
-        logger.info(f"API Response (PUT): {url} - Status: {response.status_code}")
+        logger.info("API Response (PUT): %s - Status: %s", url, response.status_code)
         return response
     except RequestException as e:
-        logger.error(f"PUT request failed for {url}: {e}")
+        logger.error("PUT request failed for %s: %s", url, e)
         return None
 
 
@@ -123,7 +129,7 @@ def api_put(
 # =============================================================================
 
 
-def get_conversation_info(conversation_id: str) -> Optional[dict]:
+def get_conversation_info(conversation_id: str) -> Optional[Dict[str, Any]]:
     """
     Fetch conversation information from Strapi.
 
@@ -136,11 +142,14 @@ def get_conversation_info(conversation_id: str) -> Optional[dict]:
     url = f"{config.STRAPI_GET_CONVERSATION}/{conversation_id}"
     response = api_get(url, headers=config.HEADERS_API_BACKEND)
     if response:
-        return response.json().get("data", {})
+        try:
+            return response.json().get("data", {})
+        except ValueError:
+            logger.error("Failed to parse JSON response from GET %s", url)
     return None
 
 
-def get_conversation_members(conversation_id: str) -> Optional[list]:
+def get_conversation_members(conversation_id: str) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch conversation members from Strapi.
 
@@ -153,11 +162,16 @@ def get_conversation_members(conversation_id: str) -> Optional[list]:
     url = config.STRAPI_GET_CONVERSATION_MEMBER.format(conversation_id=conversation_id)
     response = api_get(url, headers=config.HEADERS_API_BACKEND)
     if response:
-        return response.json().get("data", [])
+        try:
+            return response.json().get("data", [])
+        except ValueError:
+            logger.error("Failed to parse JSON response from GET %s", url)
     return None
 
 
-def get_message_history(conversation_id: str, message_id: str) -> Optional[list]:
+def get_message_history(
+    conversation_id: str, message_id: str
+) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch message history for a conversation.
 
@@ -173,11 +187,14 @@ def get_message_history(conversation_id: str, message_id: str) -> Optional[list]
     )
     response = api_get(url, headers=config.HEADERS_API_BACKEND)
     if response:
-        return response.json().get("data", [])
+        try:
+            return response.json().get("data", [])
+        except ValueError:
+            logger.error("Failed to parse JSON response from GET %s", url)
     return None
 
 
-def sync_message(data: dict) -> Optional[requests.Response]:
+def sync_message(data: Dict[str, Any]) -> Optional[requests.Response]:
     """
     Sync message to Strapi.
 
@@ -192,7 +209,7 @@ def sync_message(data: dict) -> Optional[requests.Response]:
     )
 
 
-def update_message(payload: dict) -> Optional[requests.Response]:
+def update_message(payload: Dict[str, Any]) -> Optional[requests.Response]:
     """
     Update message in Strapi.
 
@@ -209,7 +226,7 @@ def update_message(payload: dict) -> Optional[requests.Response]:
     )
 
 
-def save_bot_message(data: dict) -> Optional[requests.Response]:
+def save_bot_message(data: Dict[str, Any]) -> Optional[requests.Response]:
     """
     Save bot-sent message to Strapi.
 
@@ -231,7 +248,7 @@ def save_bot_message(data: dict) -> Optional[requests.Response]:
 # =============================================================================
 
 
-def call_agent_webhook(payload: dict) -> Optional[requests.Response]:
+def call_agent_webhook(payload: Dict[str, Any]) -> Optional[requests.Response]:
     """
     Call the N8N agent webhook.
 
@@ -264,7 +281,9 @@ def check_question(content: str) -> Optional[requests.Response]:
 # =============================================================================
 
 
-def find_user_role(members: list, platform_user_id: str) -> Optional[str]:
+def find_user_role(
+    members: List[Dict[str, Any]], platform_user_id: str
+) -> Optional[str]:
     """
     Find user role from member list.
 
@@ -285,7 +304,7 @@ def find_user_role(members: list, platform_user_id: str) -> Optional[str]:
     )
 
 
-def build_history_chat(history: list) -> list:
+def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Build history chat format for agent payload.
 

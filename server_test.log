@@ -1,0 +1,54 @@
+/root/agent-messages/main.py:58: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO:     Will watch for changes in these directories: ['/root/agent-messages']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [395027] using StatReload
+INFO:     Started server process [395043]
+INFO:     Waiting for application startup.
+2026-03-27 08:37:47,494 - main - INFO - Service starting up...
+2026-03-27 08:37:47,495 - main - INFO - Syncing all bots...
+2026-03-27 08:37:47,496 - main - INFO - Syncing zalo webhook for kien
+2026-03-27 08:37:49,071 - main - INFO - Syncing Telegram bot pytest_manual_bot webhook
+2026-03-27 08:37:49,874 - telegram_service - INFO - Check telegram info done
+2026-03-27 08:37:49,875 - telegram_service - INFO - Setting Telegram webhook for pytest_manual_bot to https://leaving-contribute-dominant-pumps.trycloudflare.com/api/hook?platform=telegram&bot_id=pytest_manual_bot
+2026-03-27 08:37:50,609 - telegram_service - INFO - Response: {"ok":true,"result":true,"description":"Webhook was set"}
+2026-03-27 08:37:50,613 - main - INFO - Syncing zalo webhook for cong
+INFO:     Application startup complete.
+INFO:     127.0.0.1:42954 - "GET /docs HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /docs HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /docs HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /docs HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /docs HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /docs HTTP/1.1" 200 OK
+2026-03-27 08:38:15,995 - main - INFO - Syncing all bots...
+2026-03-27 08:38:15,997 - main - INFO - Syncing zalo webhook for kien
+2026-03-27 08:38:16,731 - zalo_service - INFO - Updating Zalo webhook for kien to https://frankfurt-local-receiver-spencer.trycloudflare.com/api/hook?platform=zalo
+2026-03-27 08:38:17,086 - main - INFO - Syncing Telegram bot pytest_manual_bot webhook
+2026-03-27 08:38:17,892 - telegram_service - INFO - Check telegram info done
+2026-03-27 08:38:17,893 - telegram_service - INFO - Setting Telegram webhook for pytest_manual_bot to https://frankfurt-local-receiver-spencer.trycloudflare.com/api/hook?platform=telegram&bot_id=pytest_manual_bot
+2026-03-27 08:38:18,627 - telegram_service - INFO - Response: {"ok":true,"result":true,"description":"Webhook was set"}
+2026-03-27 08:38:18,631 - main - INFO - Syncing zalo webhook for cong
+2026-03-27 08:38:19,352 - zalo_service - INFO - Updating Zalo webhook for cong to https://frankfurt-local-receiver-spencer.trycloudflare.com/api/hook?platform=zalo
+INFO:     127.0.0.1:44098 - "POST /api/config HTTP/1.1" 200 OK
+2026-03-27 08:38:21,064 - telegram_service - INFO - Check telegram info done
+2026-03-27 08:38:21,065 - telegram_service - INFO - Telegram webhook for pytest_manual_bot is already correctly set to https://frankfurt-local-receiver-spencer.trycloudflare.com/api/hook?platform=telegram&bot_id=pytest_manual_bot
+INFO:     103.171.92.59:0 - "POST /api/bots HTTP/1.1" 200 OK
+2026-03-27 08:38:27,403 - provider - INFO - Successfully sent Telegram message.
+INFO:     103.171.92.59:0 - "POST /api/bots/pytest_manual_bot/send HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /api/messages HTTP/1.1" 200 OK
+2026-03-27 08:38:33,478 - webhook_routes - INFO - Received telegram hook: {'update_id': 695761311, 'message': {'message_id': 58, 'from': {'id': 688310870, 'is_bot': False, 'first_name': 'Kiên', 'last_name': 'Hữu', 'username': 'Kiennh', 'language_code': 'en'}, 'chat': {'id': -5236384276, 'title': 'Kiên & agc', 'type': 'group', 'all_members_are_administrators': False, 'accepted_gift_types': {'unlimited_gifts': False, 'limited_gifts': False, 'unique_gifts': False, 'premium_subscription': False, 'gifts_from_channels': False}}, 'date': 1774600713, 'text': 'TEST-22089143'}}
+2026-03-27 08:38:33,480 - telegram_service - INFO - Stored message ee590c54-e7d8-4772-b668-99faccb8bc32 in Redis with 10min expiry
+INFO:     91.108.5.48:0 - "POST /api/hook?platform=telegram&bot_id=pytest_manual_bot HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "GET /api/messages HTTP/1.1" 200 OK
+INFO:     103.171.92.59:0 - "DELETE /api/bots/pytest_manual_bot HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [395043]
+INFO:     Stopping reloader process [395027]

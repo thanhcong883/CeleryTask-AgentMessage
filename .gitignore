@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.class
+.env
+.env.test
+.venv
+env/
+venv/
+ENV/
+build/
+dist/
+.dockerignore
