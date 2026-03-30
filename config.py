@@ -45,6 +45,13 @@ CHECK_QUESTION_API: Optional[str] = os.getenv("CHECK_QUESTION_API")
 
 # External Zalo API Base
 ZALO_EXTERNAL_API_BASE: str = os.getenv("ZALO_EXTERNAL_API_BASE", "http://abc.com")
+
+# Security Tokens
+SECRET_TOKEN: str = os.getenv("SECRET_TOKEN")
+HOOK_TOKEN: str = os.getenv("HOOK_TOKEN")
+
+if not SECRET_TOKEN or not HOOK_TOKEN:
+    raise RuntimeError("SECRET_TOKEN and HOOK_TOKEN must be set in the environment")
 BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
 # Headers
