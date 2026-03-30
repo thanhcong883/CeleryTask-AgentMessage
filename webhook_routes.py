@@ -1,5 +1,6 @@
+import security
 import logging
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from models import GenericResponse
 from database import redis_client
 from telegram_service import store_received_message
@@ -8,7 +9,7 @@ from tasks import process_message
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/hook", tags=["Webhooks"])
 
-@router.post("", response_model=GenericResponse, summary="Universal message hook")
+@router.post("", response_model=GenericResponse, summary="Universal message hook", dependencies=[Depends(security.verify_hook_token)])
 async def universal_hook(
     request: Request,
     platform: str = Query("zalo", description="The platform type (zalo, telegram)"),

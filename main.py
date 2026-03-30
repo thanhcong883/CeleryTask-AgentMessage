@@ -1,5 +1,6 @@
+import security
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 import config
 from database import redis_client, get_system_config, update_system_config, CONFIG_REDIS_KEY
 from zalo_service import sync_zalo_webhook
@@ -23,9 +24,9 @@ app = FastAPI(
 )
 
 # Include Routers
-app.include_router(bot_router)
+app.include_router(bot_router, dependencies=[Depends(security.verify_secret_token)])
 app.include_router(webhook_router)
-app.include_router(message_router)
+app.include_router(message_router, dependencies=[Depends(security.verify_secret_token)])
 
 def sync_all_bots():
     """Syncs webhook configuration for all bots in Redis."""
@@ -74,16 +75,16 @@ async def startup_event():
 
     sync_all_bots()
 
-@app.get("/", tags=["General"])
+@app.get("/", tags=["General"], dependencies=[Depends(security.verify_secret_token)])
 async def root():
     return {"status": "ok", "message": "Bot Management System API is running"}
 
-@app.get("/config", tags=["General"])
+@app.get("/config", tags=["General"], dependencies=[Depends(security.verify_secret_token)])
 async def get_config():
     """Returns the current runtime configuration."""
     return {"status": "ok", "config": get_system_config()}
 
-@app.post("/api/config", tags=["System"])
+@app.post("/api/config", tags=["System"], dependencies=[Depends(security.verify_secret_token)])
 async def update_runtime_config(new_config: dict):
     """Updates the runtime configuration (e.g., BASE_URL) and re-syncs all bots."""
     update_system_config(new_config)

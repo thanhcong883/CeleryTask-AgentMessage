@@ -27,3 +27,6 @@ fi
 echo "All services stopped."
 rm -f server_test.log
 rm -f worker_test.log
+rm -f server_final.log
+rm -f server_restart.log
+rm -f server.log

@@ -2,6 +2,7 @@ import requests
 import time
 import logging
 import pytest
+import config
 
 def test_get_bots_via_tunnel(tunnel_url):
     """
@@ -14,10 +15,13 @@ def test_get_bots_via_tunnel(tunnel_url):
     url = f"{tunnel_url}/api/bots"
     print(f"\n>>> Requesting: {url}")
     
+    # Headers with SECRET_TOKEN
+    headers = {"Authentication": f"Bearer {config.SECRET_TOKEN}"}
+
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, headers=headers, timeout=10)
             print(f">>> Attempt {attempt + 1}: Status Code: {response.status_code}")
             
             if response.status_code == 200:
