@@ -1,3 +1,4 @@
+import config
 import logging
 import uuid
 import json
@@ -41,14 +42,11 @@ def sync_telegram_webhook(bot_id: str, token: str, base_url: str):
     logger.info("Check telegram info done")
     if info.get("ok"):
         current_webhook = info.get("result", {}).get("url")
-        if current_webhook == webhook_url:
-            logger.info(f"Telegram webhook for {bot_id} is already correctly set to {webhook_url}")
-            return {"ok": True, "message": "Already synced", "url": webhook_url}
     
     logger.info(f"Setting Telegram webhook for {bot_id} to {webhook_url}")
     url = f"https://api.telegram.org/bot{token}/setWebhook"
     try:
-        response = requests.post(url, json={"url": webhook_url}, timeout=10)
+        response = requests.post(url, json={"url": webhook_url, "secret_token": config.HOOK_TOKEN}, timeout=10)
         logger.info(f"Response: {response.text}")
         response.raise_for_status()
         data = response.json()
