@@ -14,6 +14,7 @@ class SendMessageRequest(BaseModel):
     user_id: Optional[str] = Field(None, description="Recipient user ID for private messages", examples=["123456789"])
     group_id: Optional[str] = Field(None, description="Recipient group ID for group messages", examples=["-987654321"])
     type: str = Field("private", description="Message type: private or group", examples=["private"])
+    message_id: Optional[str] = Field(None, description="Optional internal message ID for tracking and updates", examples=["msg_12345"])
 
 class GenericResponse(BaseModel):
     status: str = Field(..., examples=["ok"])

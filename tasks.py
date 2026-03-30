@@ -162,7 +162,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
             }
             send_message.apply_async(
-                args=(admin_payload, admin_payload), queue="celery_send_message"
+                args=(admin_payload,), queue="celery_send_message"
             )
 
     # Notify customer
@@ -176,7 +176,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "user_id": data.get("user_id"),
     }
     send_message.apply_async(
-        args=(customer_payload, customer_payload), queue="celery_send_message"
+        args=(customer_payload,), queue="celery_send_message"
     )
 
 
@@ -309,9 +309,7 @@ def _schedule_agent_check(
 
 
 @app.task(name="tasks.send_message", queue="celery_send_message")
-def send_message(
-    data: Dict[str, Any], data_send: Optional[Dict[str, Any]] = None
-) -> None:
+def send_message(data: Dict[str, Any]) -> None:
     """
     Send message and update Strapi with the result.
     """
@@ -322,35 +320,13 @@ def send_message(
         """Callback executed after successful message send."""
         update_payload = update_message_platform(platform, message_data, send_result)
 
+        if not message_data.get("message_id"):
+            return
+
         # Update message status in Strapi
         response = update_message(update_payload)
         if not response:
             logger.error("Failed to update message %s", message_data.get("message_id"))
             return
 
-        # Save bot-sent message if applicable
-        if data_send:
-            _save_bot_sent_message(update_payload, data_send)
-
     handle_send_message(data, callback=on_success_callback)
-
-
-def _save_bot_sent_message(
-    update_payload: Dict[str, Any], data_send: Dict[str, Any]
-) -> None:
-    """Save bot-sent message to Strapi."""
-    bot_message_data = {
-        "sender_type": "bot",
-        "sender_id": "",
-        "platform_msg_id": update_payload.get("platform_msg_id"),
-        "content": data_send.get("content"),
-        "datetime": update_payload.get("datetime"),
-        "platform_conv_id": data_send.get("platform_conv_id"),
-        "message_status": "sent",
-    }
-
-    response = save_bot_message(bot_message_data)
-    if response:
-        logger.info(
-            "Bot message saved for conversation %s", data_send.get("platform_conv_id")
-        )

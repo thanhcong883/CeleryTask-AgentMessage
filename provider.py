@@ -62,16 +62,11 @@ class ZaloProvider:
         """Send a text message via External Zalo API."""
         logger.info("Sending Zalo message through external API with data: %s", _mask_token(data))
 
-        # Bot ID is required to identify the Zalo account in the external system.
-        # Assuming the token passed in data might be used or bot_id is available.
-        # The requirements had botId: string|number in /api/bots.
-        # In our provider data, we usually have user_id, content, etc.
-        # We need the botId to call the external API: {ZALO_EXTERNAL_API_BASE}/api/bots/{botId}/send
-
-        bot_id = data.get("bot_id") or data.get("token") # Fallback to token if bot_id not provided
+        # Bot ID is required to identify the account in the external system.
+        bot_id = data.get("bot_id")
         if not bot_id:
-             logger.error("No bot_id provided for Zalo message send.")
-             raise ValueError("bot_id is required for Zalo messages")
+             logger.error("No bot_id provided for message send.")
+             raise ValueError("bot_id is required for messages")
 
         url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/send"
 
@@ -89,11 +84,11 @@ class ZaloProvider:
         try:
             response = requests.post(url, json=payload, timeout=10)
             response.raise_for_status()
-            logger.info("Successfully sent Zalo message via external API.")
+            logger.info("Successfully sent message via external API.")
             return response.json()
         except RequestException as e:
             logger.error(
-                "Failed to send Zalo message via external API. URL: %s, Error: %s",
+                "Failed to send message via external API. URL: %s, Error: %s",
                 url,
                 str(e),
             )
