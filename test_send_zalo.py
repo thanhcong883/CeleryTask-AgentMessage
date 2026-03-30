@@ -18,8 +18,11 @@ def test_send():
         "type": "group"
     }
     
+    # Headers with SECRET_TOKEN
+    headers = {"Authentication": f"Bearer {config.SECRET_TOKEN}"}
+
     try:
-        response = requests.post(f"{BASE_URL}/{bot_id}/send", json=payload, timeout=10)
+        response = requests.post(f"{BASE_URL}/{bot_id}/send", headers=headers, json=payload, timeout=10)
         print(f"Status Code: {response.status_code}")
         print(f"Response: {response.text}")
         if response.status_code == 200:

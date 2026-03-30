@@ -6,7 +6,11 @@ import config
 # Use the real external API base from config
 ZALO_API_BASE = config.ZALO_EXTERNAL_API_BASE
 
-def test_create_and_verify_account():
+@pytest.fixture
+def headers():
+    return {"Authentication": f"Bearer {config.SECRET_TOKEN}"}
+
+def test_create_and_verify_account(headers):
     """
     Test direct account creation and verification on the Zalo external API.
     """
@@ -18,12 +22,12 @@ def test_create_and_verify_account():
     create_url = f"{ZALO_API_BASE}/api/accounts"
     payload = {"accountId": unique_id}
     
-    response = requests.post(create_url, json=payload, timeout=10)
+    response = requests.post(create_url, headers=headers, json=payload, timeout=10)
     assert response.status_code in [200, 201], f"Failed to create account: {response.text}"
     
     # 3. Verify Account exists in the list
     list_url = f"{ZALO_API_BASE}/api/accounts"
-    response = requests.get(list_url, timeout=10)
+    response = requests.get(list_url, headers=headers, timeout=10)
     assert response.status_code == 200, f"Failed to list accounts: {response.text}"
     
     accounts = response.json()
@@ -34,14 +38,14 @@ def test_create_and_verify_account():
     
     print(f"\n>>> SUCCESS: Account {unique_id} created and verified on Zalo platform.")
 
-def test_get_account_status():
+def test_get_account_status(headers):
     """
     Test getting status of an existing account (using 'thanhcong' which exists).
     """
     account_id = "thanhcong"
     status_url = f"{ZALO_API_BASE}/api/{account_id}/auth-status"
     
-    response = requests.get(status_url, timeout=10)
+    response = requests.get(status_url, headers=headers, timeout=10)
     # The external API might return 404 if the account isn't fully set up,
     # but based on previous curl, it should at least return 200 for 'thanhcong' 
     # if I check the list instead.
@@ -54,7 +58,7 @@ def test_get_account_status():
     else:
         print(f"\n>>> Note: Status check for {account_id} returned {response.status_code}")
 
-def test_zalo_webhook_config():
+def test_zalo_webhook_config(headers):
     """
     Test direct webhook configuration on the Zalo external API.
     """
@@ -62,25 +66,25 @@ def test_zalo_webhook_config():
     url = f"{ZALO_API_BASE}/api/{account_id}/webhook-config"
     
     # 1. Get current config
-    response = requests.get(url, timeout=10)
+    response = requests.get(url, headers=headers, timeout=10)
     assert response.status_code == 200, f"Failed to get webhook config: {response.text}"
     data = response.json()
     original_url = data.get("webhookUrl")
     print(f"\n>>> Current webhook for {account_id}: {original_url}")
     
     # 2. Update config to a temporary test URL
-    test_url = f"http://test-webhook-{uuid.uuid4().hex[:6]}.com/hook"
-    response = requests.post(url, json={"webhookUrl": test_url}, timeout=10)
+    test_url = f"http://test-webhook-{uuid.uuid4().hex[:8]}.com/hook"
+    response = requests.post(url, headers=headers, json={"webhookUrl": test_url}, timeout=10)
     assert response.status_code == 200, f"Failed to update webhook: {response.text}"
     
     # 3. Verify update
-    response = requests.get(url, timeout=10)
+    response = requests.get(url, headers=headers, timeout=10)
     current_data = response.json()
     assert current_data.get("webhookUrl") == test_url, f"Webhook URL mismatch. Expected {test_url}, got {current_data.get('webhookUrl')}"
     
     # 4. Restore original URL (optional but good practice)
     if original_url:
-        requests.post(url, json={"webhookUrl": original_url}, timeout=10)
+        requests.post(url, headers=headers, json={"webhookUrl": original_url}, timeout=10)
         print(f">>> Restored original webhook: {original_url}")
         
     print(f">>> SUCCESS: Zalo Webhook configuration verified (Get & Update).")
