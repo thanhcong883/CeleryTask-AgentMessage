@@ -1,3 +1,4 @@
+from tasks import send_message
 import logging
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Body, Path, Response
@@ -183,11 +184,7 @@ async def send_bot_message(
     if not bot_config_data:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    from provider import PROVIDERS
-
     platform_name = bot_config_data.get("platform").capitalize()
-    if platform_name not in PROVIDERS:
-         raise HTTPException(status_code=400, detail=f"No provider for {platform_name}")
 
     send_data = {
         "bot_id": bot_id,
@@ -196,11 +193,13 @@ async def send_bot_message(
         "user_id": request.user_id,
         "group_id": request.group_id,
         "type": request.type,
+        "message_id": request.message_id,
+        "platform_name": platform_name,
     }
 
     try:
-        result = PROVIDERS[platform_name].send(send_data)
-        return {"status": "ok", "result": result}
+        send_message.apply_async(args=(send_data,), queue="celery_send_message")
+        return {"status": "ok", "message": "Message queued for sending"}
     except Exception as e:
-        logger.error(f"Error sending message: {e}")
+        logger.error(f"Error queuing message: {e}")
         raise HTTPException(status_code=500, detail=str(e))
