@@ -20,7 +20,7 @@ def create_zalo_account(bot_id: str):
 def config_zalo_webhook(bot_id: str, base_url: str):
     url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/webhook-config"
     webhook_url = f"{base_url}/api/hook?platform=zalo"
-    response = requests.post(url, json={"webhookUrl": webhook_url}, timeout=10)
+    response = requests.post(url, json={"webhookUrl": webhook_url, "secretToken": config.HOOK_TOKEN}, timeout=10)
     response.raise_for_status()
     return response.json()
 
