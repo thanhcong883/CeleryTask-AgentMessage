@@ -81,3 +81,6 @@ PLATFORMS: Dict[str, Dict[str, str]] = {
         "group_url": "https://openapi.zalo.me/v3.0/oa/group/message",
     },
 }
+
+# Session Secret Key for Authentication Cookie
+SESSION_SECRET_KEY: str = os.getenv("SESSION_SECRET_KEY", "your-secret-key-here")

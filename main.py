@@ -1,8 +1,8 @@
 import security
 import logging
-from fastapi import FastAPI, Depends, Request, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Depends, Request, HTTPException, status, Form
+from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse
+from starlette.middleware.sessions import SessionMiddleware
 import config
 import httpx
 from database import redis_client, get_system_config, update_system_config, CONFIG_REDIS_KEY
@@ -26,17 +26,44 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Authentication for Flower proxy
-security_basic = HTTPBasic()
+# Add SessionMiddleware for authentication cookie
+app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET_KEY)
 
-def authenticate_flower(credentials: HTTPBasicCredentials = Depends(security_basic)):
-    if credentials.username != config.FLOWER_USER or credentials.password != config.FLOWER_PASSWORD:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
+def is_authenticated(request: Request) -> bool:
+    """Checks if the user session is authenticated."""
+    auth_status = request.session.get("authenticated")
+    logger.info(f"Checking authentication for {request.url.path}: {auth_status}")
+    return auth_status is True
+
+async def flower_proxy_request(request: Request, path: str):
+    """Internal helper to proxy requests to Flower."""
+    url = httpx.URL(config.FLOWER_URL).join(path)
+    if request.query_params:
+        url = url.copy_with(query=request.query_params.encode())
+
+    logger.info(f"Proxying to Flower: {url}")
+    async with httpx.AsyncClient() as client:
+        content = await request.body()
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        headers.pop("authorization", None)
+
+        proxy_req = client.build_request(
+            method=request.method,
+            url=url,
+            content=content,
+            headers=headers,
+            timeout=None
         )
-    return credentials.username
+
+        response = await client.send(proxy_req, stream=True)
+
+        return StreamingResponse(
+            response.aiter_raw(),
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            background=None
+        )
 
 # Include Routers
 app.include_router(bot_router, dependencies=[Depends(security.verify_secret_token)])
@@ -76,13 +103,11 @@ async def startup_event():
     """Initializes existing bot configurations from Redis on startup."""
     logger.info("Service starting up...")
 
-    # Initialize system configuration in Redis if it doesn't exist
     if not redis_client.exists(CONFIG_REDIS_KEY):
         logger.info("Initializing system configuration in Redis")
         initial_config = {"BASE_URL": config.BASE_URL}
         update_system_config(initial_config)
 
-    # Clear all Telegram running locks as they are no longer used
     running_locks = redis_client.keys("bot_running:*")
     if running_locks:
         logger.info(f"Clearing {len(running_locks)} stale Telegram bot locks")
@@ -102,39 +127,61 @@ async def update_runtime_config(new_config: dict):
     sync_all_bots()
     return {"status": "ok", "config": get_system_config()}
 
-# Catch-all proxy for Flower
+def get_login_page(error: str = None):
+    error_html = f'<p style="color: red;">{error}</p>' if error else ""
+    return HTMLResponse(content=f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Login - Bot Management System</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }}
+            .login-container {{ background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }}
+            h2 {{ text-align: center; margin-bottom: 1.5rem; }}
+            input {{ width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }}
+            button {{ width: 100%; padding: 10px; background-color: #1877f2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }}
+            button:hover {{ background-color: #166fe5; }}
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <h2>Login</h2>
+            {error_html}
+            <form method="post" action="/login">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Log In</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """)
+
+@app.get("/")
+async def root(request: Request):
+    """Serves the login page or proxies root to Flower."""
+    if is_authenticated(request):
+        return await flower_proxy_request(request, "/")
+    return get_login_page()
+
+@app.post("/login")
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    """Handles login and sets authentication session."""
+    if username == config.FLOWER_USER and password == config.FLOWER_PASSWORD:
+        logger.info(f"Successful login for {username}")
+        request.session["authenticated"] = True
+        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    logger.warning(f"Failed login attempt for {username}")
+    return get_login_page(error="Invalid username or password")
+
 @app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
-async def flower_proxy(request: Request, path_name: str, username: str = Depends(authenticate_flower)):
-    """Proxies all remaining requests to Flower."""
-    url = httpx.URL(config.FLOWER_URL).join(request.url.path)
-    if request.query_params:
-        url = url.copy_with(query=request.query_params.encode())
+async def flower_proxy(request: Request, path_name: str):
+    """Proxies all remaining requests to Flower if authenticated."""
+    if is_authenticated(request):
+        return await flower_proxy_request(request, request.url.path)
 
-    async with httpx.AsyncClient() as client:
-        # Prepare request
-        content = await request.body()
-        headers = dict(request.headers)
-        # Remove host header as it will be set by httpx
-        headers.pop("host", None)
-        # Also remove authorization header to avoid forwarding our own basic auth
-        headers.pop("authorization", None)
-
-        proxy_req = client.build_request(
-            method=request.method,
-            url=url,
-            content=content,
-            headers=headers,
-            timeout=None
-        )
-
-        response = await client.send(proxy_req, stream=True)
-
-        return StreamingResponse(
-            response.aiter_raw(),
-            status_code=response.status_code,
-            headers=dict(response.headers),
-            background=None
-        )
+    logger.info(f"Redirecting unauthenticated request for {path_name} to /")
+    return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 if __name__ == "__main__":
     import uvicorn
