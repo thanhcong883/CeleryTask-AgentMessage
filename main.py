@@ -241,7 +241,7 @@ async def flower_proxy(request: Request, path_name: str):
         }
 
         return StreamingResponse(
-            response.aiter_raw(),
+            response.aiter_bytes(),
             status_code=response.status_code,
             headers=response_headers,
             background=None
