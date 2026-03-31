@@ -1,9 +1,10 @@
 import security
 import logging
-from fastapi import FastAPI, Depends, Request, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Depends, Request, HTTPException, status, Form
+from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse
 import config
 import httpx
+import base64
 from database import redis_client, get_system_config, update_system_config, CONFIG_REDIS_KEY
 from zalo_service import sync_zalo_webhook
 from telegram_service import sync_telegram_webhook
@@ -89,13 +90,91 @@ async def update_runtime_config(new_config: dict):
     sync_all_bots()
     return {"status": "ok", "config": get_system_config()}
 
+@app.get("/login", response_class=HTMLResponse)
+async def login_get():
+    return """
+    <html>
+        <head>
+            <title>Flower Login</title>
+            <style>
+                body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; margin: 0; }
+                form { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
+                h2 { margin-top: 0; text-align: center; color: #333; }
+                input { display: block; width: 100%; padding: 0.75rem; margin: 1rem 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+                button { width: 100%; padding: 0.75rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+                button:hover { background-color: #0056b3; }
+                .error { color: red; text-align: center; margin-bottom: 1rem; }
+            </style>
+        </head>
+        <body>
+            <form method="post">
+                <h2>Flower Login</h2>
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+        </body>
+    </html>
+    """
+
+@app.post("/login")
+async def login_post(username: str = Form(...), password: str = Form(...)):
+    if username == config.FLOWER_USER and password == config.FLOWER_PASSWORD:
+        response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        auth_str = f"{username}:{password}"
+        auth_bytes = auth_str.encode("ascii")
+        base64_auth = base64.b64encode(auth_bytes).decode("ascii")
+        response.set_cookie(key="flower_auth", value=base64_auth, httponly=True)
+        return response
+    else:
+        return HTMLResponse(content="""
+        <html>
+            <head>
+                <title>Flower Login</title>
+                <style>
+                    body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; margin: 0; }
+                    form { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
+                    h2 { margin-top: 0; text-align: center; color: #333; }
+                    input { display: block; width: 100%; padding: 0.75rem; margin: 1rem 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+                    button { width: 100%; padding: 0.75rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+                    button:hover { background-color: #0056b3; }
+                    .error { color: red; text-align: center; margin-bottom: 1rem; font-size: 0.9rem; }
+                </style>
+            </head>
+            <body>
+                <form method="post">
+                    <h2>Flower Login</h2>
+                    <div class="error">Invalid username or password</div>
+                    <input type="text" name="username" placeholder="Username" required>
+                    <input type="password" name="password" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                </form>
+            </body>
+        </html>
+        """, status_code=401)
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login")
+    response.delete_cookie("flower_auth")
+    return response
+
 # Catch-all proxy for Flower
 @app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
 async def flower_proxy(request: Request, path_name: str):
-    """Proxies all remaining requests to Flower."""
+    """Proxies all remaining requests to Flower with authentication."""
+    # Retrieve the auth token from the cookie
+    flower_auth = request.cookies.get("flower_auth")
+
+    # If no auth token, redirect to login page (except for static assets or if it's already the login page)
+    # Actually, because of the catch-all, we need to be careful.
+    # The /login route is defined above, so FastAPI should match it first.
+    if not flower_auth:
+        return RedirectResponse(url="/login")
+
     url = httpx.URL(config.FLOWER_URL).join(request.url.path)
     if request.query_params:
-        url = url.copy_with(query=request.query_params.encode())
+        url = url.copy_with(query=str(request.query_params))
 
     async with httpx.AsyncClient() as client:
         # Prepare request
@@ -103,6 +182,9 @@ async def flower_proxy(request: Request, path_name: str):
         headers = dict(request.headers)
         # Remove host header as it will be set by httpx
         headers.pop("host", None)
+
+        # Inject the Authorization header for Flower
+        headers["Authorization"] = f"Basic {flower_auth}"
 
         proxy_req = client.build_request(
             method=request.method,
