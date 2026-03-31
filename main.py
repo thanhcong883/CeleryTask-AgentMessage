@@ -174,7 +174,7 @@ async def flower_proxy(request: Request, path_name: str):
 
     url = httpx.URL(config.FLOWER_URL).join(request.url.path)
     if request.query_params:
-        url = url.copy_with(query=str(request.query_params))
+        url = url.copy_with(query=str(request.query_params).encode())
 
     async with httpx.AsyncClient() as client:
         # Prepare request
