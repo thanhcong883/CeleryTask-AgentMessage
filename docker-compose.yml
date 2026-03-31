@@ -6,8 +6,9 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --requirepass redispass
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "redispass", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
