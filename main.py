@@ -77,7 +77,7 @@ async def startup_event():
 
     sync_all_bots()
 
-@app.get("/config", tags=["General"], dependencies=[Depends(security.verify_secret_token)])
+@app.get("/api/config", tags=["General"], dependencies=[Depends(security.verify_secret_token)])
 async def get_config():
     """Returns the current runtime configuration."""
     return {"status": "ok", "config": get_system_config()}
