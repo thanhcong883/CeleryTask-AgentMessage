@@ -23,7 +23,7 @@ async def universal_hook(
     logger.info(f"Received {platform} hook: {body}")
 
     if platform == "zalo":
-        # {'accountId': 'bot_zalo_1', 'from': 'Nguyễn Hữu Kiên', 'time': 1774943749889, 'text': '12', 'isGroup': True, 
+        # {'accountId': 'bot_zalo_1', 'title':'Group 1', 'from': 'Nguyễn Hữu Kiên', 'time': 1774943749889, 'text': '12', 'isGroup': True, 
         # 'threadId': '8877215926323712114', 'isSelf': False, 
         # 'raw': {'type': 1, 'data': {'actionId': '12733771563290', 
         #           'msgId': '7676592750243', 'cliMsgId': '1774943749869', 'msgType': 'webchat', 
