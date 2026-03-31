@@ -232,14 +232,20 @@ async def flower_proxy(request: Request, path_name: str):
             raise e
 
         # Filter out problematic headers
-        excluded_headers = ["content-length", "transfer-encoding", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "upgrade"]
+        # We also filter out content-encoding because httpx handles decompression automatically (aiter_bytes)
+        # and we don't want to tell the browser the content is still encoded.
+        excluded_headers = [
+            "content-length", "transfer-encoding", "connection", "keep-alive",
+            "proxy-authenticate", "proxy-authorization", "te", "trailers", "upgrade",
+            "content-encoding"
+        ]
         response_headers = {
             k: v for k, v in response.headers.items()
             if k.lower() not in excluded_headers
         }
 
         return StreamingResponse(
-            response.aiter_raw(),
+            response.aiter_bytes(),
             status_code=response.status_code,
             headers=response_headers,
             background=None
