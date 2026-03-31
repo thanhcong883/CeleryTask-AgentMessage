@@ -58,7 +58,7 @@ async def universal_hook(
             "token": token,
             "type": msg_type,
             "name": name,
-            "account_id": bot_id,
+            "account_id": received_bot_id,
             "message_id": message_id,
             "sender_time": sender_time,
             "title": title
