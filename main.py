@@ -159,6 +159,36 @@ async def logout():
     response.delete_cookie("flower_auth")
     return response
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global exception handler caught: {exc}", exc_info=True)
+    return HTMLResponse(
+        status_code=500,
+        content="""
+        <html>
+            <head>
+                <title>500 Internal Server Error</title>
+                <style>
+                    body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; margin: 0; }
+                    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-width: 500px; }
+                    h1 { color: #dc3545; }
+                    p { color: #6c757d; }
+                    a { color: #007bff; text-decoration: none; }
+                    a:hover { text-decoration: underline; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>500 Internal Server Error</h1>
+                    <p>Oops! Something went wrong on our end.</p>
+                    <p>Please try again later or contact support if the issue persists.</p>
+                    <a href="/">Go to Home</a>
+                </div>
+            </body>
+        </html>
+        """
+    )
+
 # Catch-all proxy for Flower
 @app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
 async def flower_proxy(request: Request, path_name: str):
@@ -173,8 +203,8 @@ async def flower_proxy(request: Request, path_name: str):
         return RedirectResponse(url="/login")
 
     url = httpx.URL(config.FLOWER_URL).join(request.url.path)
-    if request.query_params:
-        url = url.copy_with(query=str(request.query_params).encode())
+    # if request.query_params:
+    #     url = url.copy_with(query=str(request.query_params).encode())
 
     async with httpx.AsyncClient() as client:
         # Prepare request
@@ -182,6 +212,7 @@ async def flower_proxy(request: Request, path_name: str):
         headers = dict(request.headers)
         # Remove host header as it will be set by httpx
         headers.pop("host", None)
+        headers.pop("content-length", None)
 
         # Inject the Authorization header for Flower
         headers["Authorization"] = f"Basic {flower_auth}"
@@ -189,17 +220,30 @@ async def flower_proxy(request: Request, path_name: str):
         proxy_req = client.build_request(
             method=request.method,
             url=url,
+            params=request.query_params,
             content=content,
             headers=headers,
             timeout=None
         )
 
-        response = await client.send(proxy_req, stream=True)
+        try:
+            response = await client.send(proxy_req, stream=True)
+        except Exception as e:
+            logger.error(f"Error proxying to Flower: {e}")
+            # Raise exception instead of return to trigger the global exception handler
+            raise e
+
+        # Filter out problematic headers
+        excluded_headers = ["content-length", "transfer-encoding", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "upgrade"]
+        response_headers = {
+            k: v for k, v in response.headers.items()
+            if k.lower() not in excluded_headers
+        }
 
         return StreamingResponse(
             response.aiter_raw(),
             status_code=response.status_code,
-            headers=dict(response.headers),
+            headers=response_headers,
             background=None
         )
 
