@@ -1,7 +1,10 @@
 import security
 import logging
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import StreamingResponse
 import config
+import httpx
 from database import redis_client, get_system_config, update_system_config, CONFIG_REDIS_KEY
 from zalo_service import sync_zalo_webhook
 from telegram_service import sync_telegram_webhook
@@ -22,6 +25,18 @@ app = FastAPI(
     description="API for managing Telegram and Zalo bots, including message listening and sending.",
     version="1.0.0",
 )
+
+# Authentication for Flower proxy
+security_basic = HTTPBasic()
+
+def authenticate_flower(credentials: HTTPBasicCredentials = Depends(security_basic)):
+    if credentials.username != config.FLOWER_USER or credentials.password != config.FLOWER_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 # Include Routers
 app.include_router(bot_router, dependencies=[Depends(security.verify_secret_token)])
@@ -75,10 +90,6 @@ async def startup_event():
 
     sync_all_bots()
 
-@app.get("/", tags=["General"], dependencies=[Depends(security.verify_secret_token)])
-async def root():
-    return {"status": "ok", "message": "Bot Management System API is running"}
-
 @app.get("/config", tags=["General"], dependencies=[Depends(security.verify_secret_token)])
 async def get_config():
     """Returns the current runtime configuration."""
@@ -90,6 +101,40 @@ async def update_runtime_config(new_config: dict):
     update_system_config(new_config)
     sync_all_bots()
     return {"status": "ok", "config": get_system_config()}
+
+# Catch-all proxy for Flower
+@app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
+async def flower_proxy(request: Request, path_name: str, username: str = Depends(authenticate_flower)):
+    """Proxies all remaining requests to Flower."""
+    url = httpx.URL(config.FLOWER_URL).join(request.url.path)
+    if request.query_params:
+        url = url.copy_with(query=request.query_params.encode())
+
+    async with httpx.AsyncClient() as client:
+        # Prepare request
+        content = await request.body()
+        headers = dict(request.headers)
+        # Remove host header as it will be set by httpx
+        headers.pop("host", None)
+        # Also remove authorization header to avoid forwarding our own basic auth
+        headers.pop("authorization", None)
+
+        proxy_req = client.build_request(
+            method=request.method,
+            url=url,
+            content=content,
+            headers=headers,
+            timeout=None
+        )
+
+        response = await client.send(proxy_req, stream=True)
+
+        return StreamingResponse(
+            response.aiter_raw(),
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            background=None
+        )
 
 if __name__ == "__main__":
     import uvicorn

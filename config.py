@@ -54,6 +54,11 @@ if not SECRET_TOKEN or not HOOK_TOKEN:
     raise RuntimeError("SECRET_TOKEN and HOOK_TOKEN must be set in the environment")
 BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
+# Flower Configuration
+FLOWER_USER: str = os.getenv("FLOWER_USER", "demo")
+FLOWER_PASSWORD: str = os.getenv("FLOWER_PASSWORD", "demo")
+FLOWER_URL: str = os.getenv("FLOWER_URL", "http://localhost:5555")
+
 # Headers
 HEADERS_STRAPI: Dict[str, Optional[str]] = {
     "Authorization": STRAPI_TOKEN,
