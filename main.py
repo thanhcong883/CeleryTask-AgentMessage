@@ -217,6 +217,10 @@ async def flower_proxy(request: Request, path_name: str):
         # Inject the Authorization header for Flower
         headers["Authorization"] = f"Basic {flower_auth}"
 
+        # Add Accept-Encoding for css, js files
+        if path_name.endswith((".css", ".js")):
+            headers["Accept-Encoding"] = "gzip, deflate, br, zstd"
+
         proxy_req = client.build_request(
             method=request.method,
             url=url,
@@ -234,7 +238,7 @@ async def flower_proxy(request: Request, path_name: str):
             raise e
 
         # Filter out problematic headers
-        excluded_headers = ["content-length", "transfer-encoding", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "upgrade"]
+        excluded_headers = ["content-length"]
         response_headers = {
             k: v for k, v in response.headers.items()
             if k.lower() not in excluded_headers
