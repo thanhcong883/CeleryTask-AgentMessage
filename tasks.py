@@ -140,7 +140,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     platform_name = data.get("platform_name")
     title = data.get("title", "")
     token = data.get("token")
-    print("data", data)
+  
     # Notify each admin conversation
     bot_sent_to = data.get("bot_sent_to", [])
     if bot_sent_to:
@@ -157,7 +157,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "group_id": conv_info.get("platform_conv_id"),
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
-                "platform_name": platform_name,
+                "platform_name": "Telegram",
                 "token": token,
                 "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
             }
@@ -299,7 +299,7 @@ def _schedule_agent_check(
         "bot_sent_to": conversation_info.get("bot_sent_to"),
         "bot_id": conversation_info.get("account", {}).get("account_id")
     }
-    print("agent_check_data", agent_check_data)
+
     check_agent_answer.apply_async(
         args=(agent_check_data,), countdown=int(time_to_use_agent)
     )
@@ -316,7 +316,7 @@ def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
     """
     Send message and update Strapi with the result.
     """
-    
+
     def on_success_callback(
         platform: str, message_data: Dict[str, Any], send_result: Any
     ) -> None:
