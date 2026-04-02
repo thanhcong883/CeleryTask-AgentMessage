@@ -188,17 +188,24 @@ def process_message(data: Dict[str, Any]) -> None:
     Process incoming message: sync to backend and check if agent assistance is needed.
     """
     logger.info("Processing incoming message for %s", data.get("platform_name"))
-    
+
+    # Handling cases for self-sent messages (Bot, Admin UI or Admin Zalo App)
     if data.get("isSelf"):
-        logger.info("Message is sent by bot (isSelf). Synced and skipping agent processing.")
+        msg_id = data.get("platform_msg_id")
+        if msg_id and redis_client.get(f"handled_msg:{msg_id}"):
+            # Case 1 & 2: Already synced (sent from Bot/Admin system)
+            logger.info("Bot/Admin system echo detected. Skipping.")
+            return
+        
+        # Case 3: Admin used Zalo App directly -> Sync to Strapi then stop
+        logger.info("Admin manual message detected. Syncing and stopping.")
+        sync_message(data)
         return
-    # Sync message to Strapi
+
+    # Case 4: Customer message -> Sync and proceed to Agent logic
     sync_response = sync_message(data)
     if not sync_response:
         return
-
-    # If the message is from the bot itself, just save (sync) it and stop here.
-    
 
     # Extract conversation and message IDs
     try:
@@ -329,6 +336,11 @@ def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
         """Callback executed after successful message send."""
         update_payload = update_message_platform(platform, message_data, send_result)
         
+        # Mark this platform_msg_id as already handled by our system to avoid echo sync
+        platform_msg_id = update_payload.get("platform_msg_id")
+        if platform_msg_id:
+             redis_client.setex(f"handled_msg:{platform_msg_id}", 3600, "1")
+
         if sender_type == "bot":
             save_bot_message(message_data)
         # Update message status in Strapi
