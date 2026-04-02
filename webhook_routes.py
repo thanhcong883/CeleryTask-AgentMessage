@@ -61,7 +61,8 @@ async def universal_hook(
             "account_id": received_bot_id,
             "platform_msg_id": message_id,
             "sender_time": sender_time,
-            "title": title
+            "title": title,
+            "isSelf": body.get("isSelf")
         }
     elif platform == "telegram":
         # {'update_id': 695761324, 'message': {'message_id': 77, 'from': {'id': 688310870, 'is_bot': False, 'first_name': 'Kiên', 'last_name': 'Hữu', 'username': 'Kiennh', 'language_code': 'en'}, 'chat': {'id': -5236384276, 'title': 'Kiên & agc', 'type': 'group', 'all_members_are_administrators': False, 'accepted_gift_types': {'unlimited_gifts': False, 'limited_gifts': False, 'unique_gifts': False, 'premium_subscription': False, 'gifts_from_channels': False}}, 'date': 1774945399, 'text': '1'}}

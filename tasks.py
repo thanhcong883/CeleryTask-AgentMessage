@@ -194,6 +194,11 @@ def process_message(data: Dict[str, Any]) -> None:
     if not sync_response:
         return
 
+    # If the message is from the bot itself, just save (sync) it and stop here.
+    if data.get("isSelf"):
+        logger.info("Message is sent by bot (isSelf). Synced and skipping agent processing.")
+        return
+
     # Extract conversation and message IDs
     try:
         noti_data = sync_response.json().get("data", [])
