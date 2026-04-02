@@ -188,16 +188,17 @@ def process_message(data: Dict[str, Any]) -> None:
     Process incoming message: sync to backend and check if agent assistance is needed.
     """
     logger.info("Processing incoming message for %s", data.get("platform_name"))
-
+    
+    if data.get("isSelf"):
+        logger.info("Message is sent by bot (isSelf). Synced and skipping agent processing.")
+        return
     # Sync message to Strapi
     sync_response = sync_message(data)
     if not sync_response:
         return
 
     # If the message is from the bot itself, just save (sync) it and stop here.
-    if data.get("isSelf"):
-        logger.info("Message is sent by bot (isSelf). Synced and skipping agent processing.")
-        return
+    
 
     # Extract conversation and message IDs
     try:
