@@ -2,6 +2,7 @@
 Celery tasks for message processing and agent communication.
 """
 
+import hashlib
 import logging
 from typing import Any, Callable, Optional, Dict, List, Protocol
 import os
@@ -192,11 +193,17 @@ def process_message(data: Dict[str, Any]) -> None:
     # Handling cases for self-sent messages (Bot, Admin UI or Admin Zalo App)
     if data.get("isSelf"):
         msg_id = data.get("platform_msg_id")
-        if msg_id and redis_client.get(f"handled_msg:{msg_id}"):
-            # Case 1 & 2: Already synced (sent from Bot/Admin system)
-            logger.info("Bot/Admin system echo detected. Skipping.")
+        content = data.get("content", "")
+        platform_conv_id = data.get("platform_conv_id")
+        content_hash = hashlib.md5((content or "").encode()).hexdigest()
+
+        # Check 1: msgId mark (set in on_success_callback)
+        # Check 2: Content Hash mark (set in provider.py before sending)
+        if (msg_id and redis_client.get(f"handled_msg:{msg_id}")) or \
+           redis_client.get(f"bot_sent:{platform_conv_id}:{content_hash}"):
+            logger.info("Bot/Admin system echo detected (by msgId or content-hash). Skipping.")
             return
-        
+
         # Case 3: Admin used Zalo App directly -> Sync to Strapi then stop
         logger.info("Admin manual message detected. Syncing and stopping.")
         sync_message(data)
