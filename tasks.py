@@ -4,7 +4,7 @@ Celery tasks for message processing and agent communication.
 
 import logging
 from typing import Any, Callable, Optional, Dict, List, Protocol
-
+import os
 from celery import Celery
 from database import redis_client
 
@@ -158,7 +158,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
                 "platform_name": "Telegram",
-                "token": os.getenv("TELEGRAM_TOKEN_SUPPORT"),
+                "token": os.environ.get("TELEGRAM_TOKEN_SUPPORT"),
                 "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
             }
             send_message.apply_async(
