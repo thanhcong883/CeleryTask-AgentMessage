@@ -105,7 +105,7 @@ def handle_send_message(
         return None
 
 
-@app.task(name="tasks.check_agent_answer", queue="celery_receive_message")
+@app.task(name="tasks.check_agent_answer", queue="celery_check_answer")
 def check_agent_answer(data: Dict[str, Any]) -> None:
     """
     Celery task to check if an agent should answer a question.
@@ -189,9 +189,9 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "group_id": conv_info.get("platform_conv_id"),
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
-                "platform_name": platform_name,
-                "token": token,
-                "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
+                "platform_name": "telegram",
+                "token": "8680018776:AAEEBlHRQo7xQ2ajjXkvKQlQQCle4ZkiWQU",
+                "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name} nhóm: {title}",
             }
             send_message.apply_async(
                 args=(admin_payload,), queue="celery_send_message"
@@ -231,7 +231,9 @@ def process_message(data: Dict[str, Any]) -> None:
             logger.error("Empty response from sync message API")
             return
 
+        logger.info("Noti data: %s", noti_data)
         first_item = noti_data[0].get("data", {})
+        
         conversation_id = first_item.get("conversationId")
         message_id = first_item.get("messageId")
 
@@ -295,7 +297,7 @@ def process_message(data: Dict[str, Any]) -> None:
     )
 
 
-@app.task(name="tasks.task_check_question", queue="celery_receive_message")
+@app.task(name="tasks.task_check_question", queue="celery_check_question")
 def task_check_question(
     data: Dict[str, Any],
     conversation_id: str,
