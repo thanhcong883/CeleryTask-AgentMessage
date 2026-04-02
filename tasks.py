@@ -140,7 +140,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     platform_name = data.get("platform_name")
     title = data.get("title", "")
     token = data.get("token")
-
+    print("data", data)
     # Notify each admin conversation
     bot_sent_to = data.get("bot_sent_to", [])
     if bot_sent_to:
@@ -154,7 +154,6 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
 
             admin_payload = {
                 "type": conv_info.get("type"),
-                "sender_type": "bot",
                 "group_id": conv_info.get("platform_conv_id"),
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
@@ -163,13 +162,12 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
             }
             send_message.apply_async(
-                args=(admin_payload,), queue="celery_send_message"
+                args=(admin_payload, "bot"), queue="celery_send_message"
             )
 
     # Notify customer
     customer_payload = {
         "type": data.get("type"),
-        "sender_type": "bot",
         "group_id": data.get("group_id"),
         "content": data.get("bot_message"),
         "platform_name": platform_name,
@@ -177,8 +175,9 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "token": token,
         "user_id": data.get("user_id"),
     }
+    
     send_message.apply_async(
-        args=(customer_payload,), queue="celery_send_message"
+        args=(customer_payload, "bot"), queue="celery_send_message"
     )
 
 
@@ -298,7 +297,6 @@ def _schedule_agent_check(
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
     }
-
     check_agent_answer.apply_async(
         args=(agent_check_data,), countdown=int(time_to_use_agent)
     )
@@ -311,24 +309,28 @@ def _schedule_agent_check(
 
 
 @app.task(name="tasks.send_message", queue="celery_send_message")
-def send_message(data: Dict[str, Any]) -> None:
+def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
     """
     Send message and update Strapi with the result.
     """
-
+    
     def on_success_callback(
         platform: str, message_data: Dict[str, Any], send_result: Any
     ) -> None:
         """Callback executed after successful message send."""
         update_payload = update_message_platform(platform, message_data, send_result)
-
+        
+        if sender_type == "bot":
+            save_bot_message(message_data)
+        # Update message status in Strapi
         if not message_data.get("message_id"):
             return
-
-        # Update message status in Strapi
         response = update_message(update_payload)
         if not response:
             logger.error("Failed to update message %s", message_data.get("message_id"))
             return
 
     handle_send_message(data, callback=on_success_callback)
+
+
+
