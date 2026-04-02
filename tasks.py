@@ -174,6 +174,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "platform_conv_id": data.get("platform_conv_id"),
         "token": token,
         "user_id": data.get("user_id"),
+        "bot_id": data.get("bot_id")
     }
     
     send_message.apply_async(
@@ -296,7 +297,9 @@ def _schedule_agent_check(
         "token": data.get("token"),
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
+        "bot_id": conversation_info.get("account", {}).get("account_id")
     }
+    print("agent_check_data", agent_check_data)
     check_agent_answer.apply_async(
         args=(agent_check_data,), countdown=int(time_to_use_agent)
     )
