@@ -154,12 +154,13 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
 
             admin_payload = {
                 "type": conv_info.get("type"),
+                "sender_type": "bot",
                 "group_id": conv_info.get("platform_conv_id"),
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
                 "platform_name": platform_name,
                 "token": token,
-                "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
+                "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
             }
             send_message.apply_async(
                 args=(admin_payload,), queue="celery_send_message"
@@ -168,6 +169,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     # Notify customer
     customer_payload = {
         "type": data.get("type"),
+        "sender_type": "bot",
         "group_id": data.get("group_id"),
         "content": data.get("bot_message"),
         "platform_name": platform_name,
