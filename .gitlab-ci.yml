@@ -1,9 +1,14 @@
+include:
+  - project: 'devops/cicd'
+    ref: 'master'
+    file: 'base/remove-img-old.yml'
+
 stages:
   - build
   - deploy
   - notify_success
   - notify_failure
-
+  - remove_image_old
 .build_template:
   before_script:
     - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD
@@ -25,24 +30,25 @@ build_image_dev:
   tags:
     - evg
 
-update-image-tag-dev:
+replace-tag-image-dev:
   needs:
     - build_image_dev
   stage: build
   variables:
-    VALUE_CELERY_RECIVE: chatbox-ai/celery-recive/values.yaml
-    VALUE_CELERY_SEND: chatbox-ai/celery-send/values.yaml
-    VALUE_CELERY_BEAT: chatbox-ai/celery-beat/values.yaml
-    VALUE_CELERY_AGENT: chatbox-ai/celery-agent/values.yaml
-
+    VALUE_PATH_WEB: chart-support-ai-prod/chart-core/celery-message/values.yaml
+    VALUE_PATH_AGENT: chart-support-ai-prod/chart-core/celery-message/charts/celery-agent/values.yaml
+    VALUE_PATH_BEAT: chart-support-ai-prod/chart-core/celery-message/charts/celery-beat/values.yaml
+    VALUE_PATH_SEND: chart-support-ai-prod/chart-core/celery-message/charts/celery-send/values.yaml
+    VALUE_PATH_RECIVE: chart-support-ai-prod/chart-core/celery-message/charts/celery-recive/values.yaml
+    VALUE_PATH_FLOWER: chart-support-ai-prod/chart-core/celery-message/charts/celery-flower/values.yaml
     TAG_PATH: .image.tag
   image: alpine:latest
   before_script:
     - apk update
     - apk add git yq
-    - git clone https://${GIT_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net/devops/helm/chart-dev-2026.git
-    - cd chart-dev-2026
-    - git remote set-url origin "https://${GIT_USER}:${CI_PRIVATE_TOKEN}@gitlab.evgcorp.net/devops/helm/chart-dev-2026.git"
+    - git clone https://$GIT_USER:$CI_PRIVATE_TOKEN@git@gitlab.evgcorp.net:devops/helm/chart-support-ai-prod.git
+    - cd chart-support-ai-prod
+    - git remote set-url origin "https://$GIT_USER:$CI_PRIVATE_TOKEN@git@gitlab.evgcorp.net:devops/helm/chart-support-ai-prod.git"
     # Configure git user
     - git config --global user.email "van.le@evgcorp.net"
     - git config --global user.name "GitLab CI by Van"
@@ -53,14 +59,18 @@ update-image-tag-dev:
 
   script:
     # Update YAML file
-    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_RECIVE
-    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_SEND
-    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_BEAT
-    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_CELERY_AGENT
-    - git add $VALUE_CELERY_RECIVE 
-    - git add $VALUE_CELERY_SEND 
-    - git add $VALUE_CELERY_BEAT
-    - git add $VALUE_CELERY_AGENT 
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_PATH_WEB
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_PATH_AGENT
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_PATH_BEAT
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_PATH_SEND
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_PATH_RECIVE
+    - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_PATH_FLOWER
+    - git add $VALUE_PATH_WEB
+    - git add $VALUE_PATH_AGENT
+    - git add $VALUE_PATH_BEAT
+    - git add $VALUE_PATH_SEND
+    - git add $VALUE_PATH_RECIVE
+    - git add $VALUE_PATH_FLOWER
     - git commit -m "CI Deploy $TAG_PATH to $CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery"
     - git push -o ci.skip origin HEAD:main
 
@@ -69,26 +79,19 @@ update-image-tag-dev:
   tags:
     - evg
 
-upgrade_k8s:
+deploy_k8s:
   needs:
-    - update-image-tag-dev
+    - replace-tag-image-dev
   stage: deploy
   image: alpine:latest
   variables:
-    PATH_DIR: '/projects/chart-dev-2026/chatbox-ai'
-    PATH_CELERY_AGENT: '/projects/chart-dev-2026/chatbox-ai/celery-agent'
-    PATH_CELERY_RECIVE: '/projects/chart-dev-2026/chatbox-ai/celery-recive'
-    PATH_CELERY_SEND: '/projects/chart-dev-2026/chatbox-ai/celery-send'
-    PATH_CELERY_BEAT: '/projects/chart-dev-2026/chatbox-ai/celery-beat'
+    PATH_DIR: '/root/chart-support-ai-prod/chart-core/celery-message'
   before_script:
     - apk add --no-cache openssh-client
     - chmod 600 "$SSH_KEY_K8S" || true
   script:
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && git pull origin main"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_AGENT && helm --kubeconfig=/kube-config/dev/config upgrade celery-agent . -n agent-dev"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_RECIVE && helm --kubeconfig=/kube-config/dev/config upgrade celery-recive . -n agent-dev"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_SEND && helm --kubeconfig=/kube-config/dev/config upgrade celery-send . -n agent-dev"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_CELERY_BEAT && helm --kubeconfig=/kube-config/dev/config upgrade celery-beat . -n agent-dev"
+    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && helm --kubeconfig=/kube-config/dev/config upgrade --install prod . -n support-api-prod"
   when: manual
   only:
     - main
@@ -96,10 +99,24 @@ upgrade_k8s:
     - evg
 
 
+prune_img_old:
+  stage: remove_image_old
+  extends:
+    - .remove-img
+  environment:
+    name: dev
+  variables:
+    GITOPS_SECRET: huyabc321
+    GITOPS: http://img-old-delete-img-old.argocd/delete
+  only:
+    - main
+  tags:
+    - k8s-dev
+
 notify_success:
   image: alpine
   needs:
-    - upgrade_k8s
+    - deploy_k8s
   stage: notify_success
   before_script:
     - apk add --no-cache curl jq
@@ -108,7 +125,7 @@ notify_success:
     TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
   script:
     - |
-      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ ${CI_PROJECT_NAME} pipeline succeed on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ *${CI_PROJECT_NAME}* pipeline succeed on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
   when: on_success
   only:
     - main
@@ -119,7 +136,7 @@ notify_success:
 notify_failure:
   image: alpine
   needs:
-    - upgrade_k8s
+    - deploy_k8s
   stage: notify_failure
   before_script:
     - apk add --no-cache curl jq
@@ -128,7 +145,7 @@ notify_failure:
     TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
   script:
     - |
-      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \" ❌ Project: $CI_PROJECT_NAME $JOB_NAME false on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE} \"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \" ❌ Project: *$CI_PROJECT_NAME* $JOB_NAME false on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE} \"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
   when: on_failure
   allow_failure: false
   only:
