@@ -51,6 +51,7 @@ async def universal_hook(
         title = body.get("title") or "unknown"
 
         msg_data = {
+            "account_id": received_bot_id,
             "platform_name": "Zalo",
             "content": content,
             "platform_user_id": sender_id,
@@ -88,7 +89,9 @@ async def universal_hook(
         title = chat.get("title")
 
         msg_data = {
+            "account_id": bot_id,
             "platform_name": "Telegram",
+            "title": chat.get("title"),
             "content": message.get("text"),
             "platform_user_id": str(from_user.get("id")),
             "platform_conv_id": str(chat.get("id")),
