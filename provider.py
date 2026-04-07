@@ -1,11 +1,11 @@
-"""Provider interfaces for connecting to different messaging platforms."""
-
+import hashlib
 import logging
 import requests
 from requests.exceptions import RequestException
 from typing import Dict, Any
 
 import config
+from database import redis_client
 
 # Configure logging
 logging.basicConfig(
@@ -30,15 +30,11 @@ class TelegramProvider:
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Send a text message via Telegram Bot API."""
         conf = config.PLATFORMS.get("Telegram", {})
+        # todo: get token from redis by bot_id
         url = conf.get("url", "").format(token=data.get("token", ""))
 
         # Determine appropriate ID field depending on chat type
-        chat_type = data.get("type", "")
-        chat_id = (
-            data.get("group_id")
-            if chat_type in ["group", "supergroup"]
-            else data.get("user_id")
-        )
+        chat_id = data.get("group_id") or data.get("user_id")
 
         payload = {
             "chat_id": chat_id,
@@ -60,41 +56,54 @@ class TelegramProvider:
 
 
 class ZaloProvider:
-    """Provider for sending messages to Zalo Official Account."""
+    """Provider for sending messages to Zalo via External API."""
 
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a text message via Zalo Open API."""
-        logger.info("Sending Zalo message with data: %s", _mask_token(data))
-        conf = config.PLATFORMS.get("Zalo", {})
+        """Send a text message via External Zalo API."""
+        logger.info("Sending Zalo message through external API with data: %s", _mask_token(data))
 
-        chat_type = data.get("type", "").strip()
-        is_private = chat_type == "private"
-        url = conf.get("private_url") if is_private else conf.get("group_url")
+        # Bot ID is required to identify the account in the external system.
+        bot_id = data.get("bot_id")
+        if not bot_id:
+             logger.error("No bot_id provided for message send.")
+             raise ValueError("bot_id is required for messages")
 
-        headers = {"access_token": data.get("token", "")}
-        recipient_id = data.get("user_id") if is_private else data.get("group_id")
+        url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/send"
+
+        # Map types: 'private' -> 'user'
+        msg_type = data.get("type", "user")
+        if msg_type == "private":
+            msg_type = "user"
+
+        # Mark before sending to prevent race condition (webhook arrives before API response)
+        content = data.get("content", "")
+        # Get conv_id from send data (same as platform_conv_id in webhook)
+        conv_id = data.get("group_id") or data.get("user_id")
+        content_hash = hashlib.md5((content or "").encode()).hexdigest()
+        redis_client.setex(f"bot_sent:{conv_id}:{content_hash}", 60, "1")
 
         payload = {
-            "recipient": {"user_id" if is_private else "group_id": recipient_id},
-            "message": {"text": data.get("content")},
+            "text": content,
+            "threadId": conv_id,
+            "type": msg_type,
         }
 
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response = requests.post(url, json=payload, timeout=10)
             response.raise_for_status()
-            logger.info("Successfully sent Zalo message.")
+            logger.info("Successfully sent message via external API.")
             return response.json()
         except RequestException as e:
             logger.error(
-                "Failed to send Zalo message. Data: %s, Error: %s",
-                _mask_token(data),
+                "Failed to send message via external API. URL: %s, Error: %s",
+                url,
                 str(e),
             )
             raise
 
 
-# Global dictionary holding provider instances
 PROVIDERS: Dict[str, Any] = {
     "Telegram": TelegramProvider(),
+    "Whatapps": ZaloProvider(),
     "Zalo": ZaloProvider(),
 }

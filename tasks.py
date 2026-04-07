@@ -2,11 +2,12 @@
 Celery tasks for message processing and agent communication.
 """
 
+import hashlib
 import logging
 from typing import Any, Callable, Optional, Dict, List, Protocol
-
+import os
 from celery import Celery
-import redis
+from database import redis_client
 
 from provider import PROVIDERS
 import config
@@ -38,10 +39,6 @@ logger = logging.getLogger(__name__)
 # Initialize Celery app
 app = Celery("my_app", broker=config.REDIS_URL)
 
-# Initialize Redis Client for debouncing and state management
-redis_client = redis.from_url(config.REDIS_URL)
-
-
 def _mask_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
     """Helper to mask tokens in logs."""
     if not isinstance(data, dict):
@@ -52,84 +49,50 @@ def _mask_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe_data
 
 
-# =============================================================================
-# Message Handlers
-# =============================================================================
-
-
 def handle_send_message(
-    data: Dict[str, Any],
-    callback: Optional[Callable[[str, Dict[str, Any], Any], None]] = None,
-) -> None:
+    data: Dict[str, Any], callback: Optional[Callable[[str, Dict[str, Any], Any], None]] = None
+) -> Any:
     """
-    Send message through the appropriate platform provider.
-
-    Args:
-        data: Message data containing platform_id and message content
-        callback: Optional callback function to execute on success
+    Logic to send message to platform and call success callback.
     """
-    platform: Optional[str] = data.get("platform_name")
-    if not platform:
-        logger.error("Platform name missing in message data")
-        return
-
-    provider: Optional[Provider] = PROVIDERS.get(platform.title())
-    if not provider:
-        logger.error("Platform '%s' not supported", platform)
-        return
+    platform = data.get("platform_name")
+    if platform not in PROVIDERS:
+        logger.error("Platform %s not supported for sending", platform)
+        return None
 
     try:
-        logger.info("Sending message via %s: %s", platform, _mask_sensitive_data(data))
-        result = provider.send(data)
+        # data may contains token, use it if available
+        # if not, provider should handle it (e.g. from config)
+        result = PROVIDERS[platform].send(data)
+
         if callback:
             callback(platform, data, result)
-        logger.info("Message sent successfully via %s", platform)
+
+        return result
     except Exception as e:
-        logger.error("Failed to send message via %s: %s", platform, e, exc_info=True)
+        logger.error("Failed to send message to %s: %s", platform, e)
+        return None
 
 
-# =============================================================================
-# Celery Tasks
-# =============================================================================
-
-
-@app.task(name="task.agent_message", queue="celery_agent_message")
+@app.task(name="tasks.check_agent_answer", queue="celery_receive_message")
 def check_agent_answer(data: Dict[str, Any]) -> None:
     """
-    Check if agent can answer the question and notify admins if needed.
-
-    Args:
-        data: Contains conversation, message_id, content, and notification settings
+    Celery task to check if an agent should answer a question.
     """
     conversation_id = data.get("conversation")
     message_id = data.get("message_id")
-    content = data.get("content")
 
-    if not conversation_id or not message_id or not content:
-        logger.error("Required fields missing in agent message data")
-        return
-
-    # Check if this task is processing the *latest* message in the conversation.
-    # If a newer message has arrived while this task was waiting in the queue, skip this one.
+    # DEBOUNCE CHECK:
+    # Only proceed if this is still the latest message from the user.
     latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
-    if latest_msg_id and latest_msg_id.decode("utf-8") != str(message_id):
+    if latest_msg_id and str(latest_msg_id) != str(message_id):
         logger.info(
-            "Skipping task for msg %s because a newer msg %s arrived for conversation %s",
-            message_id,
-            latest_msg_id.decode("utf-8"),
-            conversation_id,
-        )
-        return
-
-    # Skip agent check if an admin has recently been active
-    if redis_client.get(f"admin_active:{conversation_id}"):
-        logger.info(
-            "Admin active, skipping agent check for conversation %s", conversation_id
+            "Newer message (%s) exists for conversation %s, skipping agent check for %s",
+            latest_msg_id, conversation_id, message_id
         )
         return
 
     # If the bot is currently processing an answer for another message, we can choose to skip or wait.
-    # We skip here to avoid parallel bot answers if a previous one hasn't finished.
     if redis_client.get(f"bot_processing:{conversation_id}"):
         logger.info(
             "Bot is currently processing another answer for %s. Skipping this check.",
@@ -149,13 +112,12 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
         "history_chat": build_history_chat(history),
     }
 
-    # Set processing lock right before calling the slow AI API.
-    # This prevents parallel calls if messages arrived at the exact same millisecond.
+    # Set processing lock
     redis_client.setex(f"bot_processing:{conversation_id}", 60, "1")
 
     agent_response = call_agent_webhook(agent_payload)
 
-    # Release processing lock so the bot is ready for the next message
+    # Release processing lock
     redis_client.delete(f"bot_processing:{conversation_id}")
 
     if not agent_response:
@@ -179,7 +141,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     platform_name = data.get("platform_name")
     title = data.get("title", "")
     token = data.get("token")
-
+  
     # Notify each admin conversation
     bot_sent_to = data.get("bot_sent_to", [])
     if bot_sent_to:
@@ -196,12 +158,12 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "group_id": conv_info.get("platform_conv_id"),
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
-                "platform_name": platform_name,
-                "token": token,
-                "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
+                "platform_name": "Telegram",
+                "token": os.environ.get("TELEGRAM_TOKEN_SUPPORT"),
+                "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
             }
             send_message.apply_async(
-                args=(admin_payload, admin_payload), queue="celery_send_message"
+                args=(admin_payload, "bot"), queue="celery_send_message"
             )
 
     # Notify customer
@@ -213,9 +175,11 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "platform_conv_id": data.get("platform_conv_id"),
         "token": token,
         "user_id": data.get("user_id"),
+        "bot_id": data.get("bot_id")
     }
+    
     send_message.apply_async(
-        args=(customer_payload, customer_payload), queue="celery_send_message"
+        args=(customer_payload, "bot"), queue="celery_send_message"
     )
 
 
@@ -223,13 +187,29 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
 def process_message(data: Dict[str, Any]) -> None:
     """
     Process incoming message: sync to backend and check if agent assistance is needed.
-
-    Args:
-        data: Incoming message data from platform
     """
     logger.info("Processing incoming message for %s", data.get("platform_name"))
 
-    # Sync message to Strapi
+    # Handling cases for self-sent messages (Bot, Admin UI or Admin Zalo App)
+    if data.get("isSelf"):
+        msg_id = data.get("platform_msg_id")
+        content = data.get("content", "")
+        platform_conv_id = data.get("platform_conv_id")
+        content_hash = hashlib.md5((content or "").encode()).hexdigest()
+
+        # Check 1: msgId mark (set in on_success_callback)
+        # Check 2: Content Hash mark (set in provider.py before sending)
+        if (msg_id and redis_client.get(f"handled_msg:{msg_id}")) or \
+           redis_client.get(f"bot_sent:{platform_conv_id}:{content_hash}"):
+            logger.info("Bot/Admin system echo detected (by msgId or content-hash). Skipping.")
+            return
+
+        # Case 3: Admin used Zalo App directly -> Sync to Strapi then stop
+        logger.info("Admin manual message detected. Syncing and stopping.")
+        sync_message(data)
+        return
+
+    # Case 4: Customer message -> Sync and proceed to Agent logic
     sync_response = sync_message(data)
     if not sync_response:
         return
@@ -291,15 +271,8 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # NEW DEBOUNCE LOGIC:
-    # Set the latest message ID for this conversation. If a new message comes in,
-    # it overwrites this key. The `check_agent_answer` task will verify this key before proceeding.
-    # Expiry is set to a reasonable time (e.g., 1 hour) just to clean up Redis.
     redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
     logger.info("Set latest user message for %s to %s", conversation_id, message_id)
-
-    # Note: We removed the `bot_processing:{conversation_id}` lock from here.
-    # It allows new messages to be scheduled, effectively resetting the agent check
-    # timer since the old tasks will see `latest_user_message` has changed and abort themselves.
 
     # Check if the question needs agent processing
     _schedule_agent_check(data, conversation_id, message_id, conversation_info)
@@ -344,6 +317,7 @@ def _schedule_agent_check(
         "token": data.get("token"),
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
+        "bot_id": conversation_info.get("account", {}).get("account_id")
     }
 
     check_agent_answer.apply_async(
@@ -358,15 +332,9 @@ def _schedule_agent_check(
 
 
 @app.task(name="tasks.send_message", queue="celery_send_message")
-def send_message(
-    data: Dict[str, Any], data_send: Optional[Dict[str, Any]] = None
-) -> None:
+def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
     """
     Send message and update Strapi with the result.
-
-    Args:
-        data: Message data to send
-        data_send: Optional data for bot-sent message logging
     """
 
     def on_success_callback(
@@ -374,36 +342,23 @@ def send_message(
     ) -> None:
         """Callback executed after successful message send."""
         update_payload = update_message_platform(platform, message_data, send_result)
+        
+        # Mark this platform_msg_id as already handled by our system to avoid echo sync
+        platform_msg_id = update_payload.get("platform_msg_id")
+        if platform_msg_id:
+             redis_client.setex(f"handled_msg:{platform_msg_id}", 3600, "1")
 
+        if sender_type == "bot":
+            save_bot_message(message_data)
         # Update message status in Strapi
+        if not message_data.get("message_id"):
+            return
         response = update_message(update_payload)
         if not response:
             logger.error("Failed to update message %s", message_data.get("message_id"))
             return
 
-        # Save bot-sent message if applicable
-        if data_send:
-            _save_bot_sent_message(update_payload, data_send)
-
     handle_send_message(data, callback=on_success_callback)
 
 
-def _save_bot_sent_message(
-    update_payload: Dict[str, Any], data_send: Dict[str, Any]
-) -> None:
-    """Save bot-sent message to Strapi."""
-    bot_message_data = {
-        "sender_type": "bot",
-        "sender_id": "",
-        "platform_msg_id": update_payload.get("platform_msg_id"),
-        "content": data_send.get("content"),
-        "datetime": update_payload.get("datetime"),
-        "platform_conv_id": data_send.get("platform_conv_id"),
-        "message_status": "sent",
-    }
 
-    response = save_bot_message(bot_message_data)
-    if response:
-        logger.info(
-            "Bot message saved for conversation %s", data_send.get("platform_conv_id")
-        )

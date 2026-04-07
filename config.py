@@ -43,6 +43,22 @@ STRAPI_GET_CONVERSATION_MEMBER: str = (
 N8N_AGENT_WEBHOOK: Optional[str] = os.getenv("N8N_AGENT_WEBHOOK")
 CHECK_QUESTION_API: Optional[str] = os.getenv("CHECK_QUESTION_API")
 
+# External Zalo API Base
+ZALO_EXTERNAL_API_BASE: str = os.getenv("ZALO_EXTERNAL_API_BASE", "http://abc.com")
+
+# Security Tokens
+SECRET_TOKEN: str = os.getenv("SECRET_TOKEN")
+HOOK_TOKEN: str = os.getenv("HOOK_TOKEN")
+
+if not SECRET_TOKEN or not HOOK_TOKEN:
+    raise RuntimeError("SECRET_TOKEN and HOOK_TOKEN must be set in the environment")
+BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
+
+# Flower Configuration
+FLOWER_USER: str = os.getenv("FLOWER_USER", "demo")
+FLOWER_PASSWORD: str = os.getenv("FLOWER_PASSWORD", "demo")
+FLOWER_URL: str = os.getenv("FLOWER_URL", "http://localhost:5555")
+
 # Headers
 HEADERS_STRAPI: Dict[str, Optional[str]] = {
     "Authorization": STRAPI_TOKEN,
