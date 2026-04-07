@@ -87,9 +87,7 @@ deploy_k8s:
     PATH_DIR: '/root/chart-support-ai-prod/chart-core/celery-message'
   before_script:
     - apk add --no-cache openssh-client
-    - mkdir -p ~/.ssh
-    - echo "$SSH_PRIVATE_KEY_DEV" > ~/.ssh/id_rsa
-    - chmod 600 ~/.ssh/id_rsa
+    - chmod 600 "$SSH_PRIVATE_KEY_DEV" || true
   script:
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && git pull origin main"
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && helm --kubeconfig=/kube-config/dev/config upgrade --install prod . -n support-ai"
@@ -126,7 +124,7 @@ notify_success:
     TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
   script:
     - |
-      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ ${CI_PROJECT_NAME} pipeline succeed on branch ${CI_COMMIT_REF_NAME} of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ *${CI_PROJECT_NAME}* pipeline succeed on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
   when: on_success
   only:
     - main
@@ -146,7 +144,7 @@ notify_failure:
     TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
   script:
     - |
-      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \" ❌ Project: $CI_PROJECT_NAME $JOB_NAME false on branch ${CI_COMMIT_REF_NAME} of ${CI_COMMIT_MESSAGE} \"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \" ❌ Project: *$CI_PROJECT_NAME* $JOB_NAME false on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE} \"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
   when: on_failure
   allow_failure: false
   only:
