@@ -92,6 +92,7 @@ deploy_k8s:
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && git pull origin main"
     - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && helm --kubeconfig=/kube-config/dev/config upgrade --install prod . -n support-ai"
   when: manual
+  allow_failure: false
   only:
     - main
   tags:
