@@ -34,12 +34,12 @@ replace-tag-image-dev:
     - build_image_dev
   stage: build
   variables:
-    VALUE_PATH_WEB: chart-support-ai-prod/chart-core/celery-message/values.yaml
-    VALUE_PATH_AGENT: chart-support-ai-prod/chart-core/celery-message/charts/celery-agent/values.yaml
-    VALUE_PATH_BEAT: chart-support-ai-prod/chart-core/celery-message/charts/celery-beat/values.yaml
-    VALUE_PATH_SEND: chart-support-ai-prod/chart-core/celery-message/charts/celery-send/values.yaml
-    VALUE_PATH_RECIVE: chart-support-ai-prod/chart-core/celery-message/charts/celery-recive/values.yaml
-    VALUE_PATH_FLOWER: chart-support-ai-prod/chart-core/celery-message/charts/celery-flower/values.yaml
+    VALUE_PATH_WEB: chart-core/celery-message/values.yaml
+    VALUE_PATH_AGENT: chart-core/celery-message/charts/celery-agent/values.yaml
+    VALUE_PATH_BEAT: chart-core/celery-message/charts/celery-beat/values.yaml
+    VALUE_PATH_SEND: chart-core/celery-message/charts/celery-send/values.yaml
+    VALUE_PATH_RECIVE: chart-core/celery-message/charts/celery-recive/values.yaml
+    VALUE_PATH_FLOWER: chart-core/celery-message/charts/celery-flower/values.yaml
     TAG_PATH: .image.tag
   image: alpine:latest
   before_script:
