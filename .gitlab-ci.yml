@@ -113,19 +113,6 @@ prune_img_old:
   tags:
     - k8s-dev
 
-prune_img_old:
-  stage: remove_image_old
-  extends:
-    - .remove-img
-  environment:
-    name: dev
-  variables:
-    GITOPS_SECRET: huyabc321
-    GITOPS: http://img-old-delete-img-old.argocd/delete
-  only:
-    - main
-  tags:
-    - k8s-dev
 
 notify_success:
   image: alpine
