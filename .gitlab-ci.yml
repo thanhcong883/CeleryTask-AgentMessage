@@ -45,9 +45,9 @@ replace-tag-image-dev:
   before_script:
     - apk update
     - apk add git yq
-    - git clone https://$GIT_USER:$CI_PRIVATE_TOKEN@git@gitlab.evgcorp.net/devops/helm/chart-support-ai-prod.git
+    - git clone https://$GIT_USER:$CI_PRIVATE_TOKEN@gitlab.evgcorp.net/devops/helm/chart-support-ai-prod.git
     - cd chart-support-ai-prod
-    - git remote set-url origin "https://$GIT_USER:$CI_PRIVATE_TOKEN@git@gitlab.evgcorp.net/devops/helm/chart-support-ai-prod.git"
+    - git remote set-url origin "https://$GIT_USER:$CI_PRIVATE_TOKEN@gitlab.evgcorp.net/devops/helm/chart-support-ai-prod.git"
     # Configure git user
     - git config --global user.email "van.le@evgcorp.net"
     - git config --global user.name "GitLab CI by Van"
