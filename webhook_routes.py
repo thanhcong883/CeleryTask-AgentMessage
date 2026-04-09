@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/hook", tags=["Webhooks"])
 @router.post("", response_model=GenericResponse, summary="Universal message hook", dependencies=[Depends(security.verify_hook_token)])
 async def universal_hook(
     request: Request,
-    platform: str = Query("zalo", description="The platform type (zalo, telegram)"),
+    platform: str = Query("zalo", description="The platform type (zalo, telegram, whatsapp)"),
     bot_id: str = Query(None, description="The bot ID (required for telegram)")
 ):
     """
@@ -53,6 +53,42 @@ async def universal_hook(
         msg_data = {
             "platform_name": "Zalo",
             "content": content,
+            "platform_user_id": sender_id,
+            "platform_conv_id": conv_id,
+            "token": token,
+            "type": msg_type,
+            "name": name,
+            "account_id": received_bot_id,
+            "platform_msg_id": message_id,
+            "sender_time": sender_time,
+            "title": title,
+            "isSelf": body.get("isSelf")
+        }
+    elif platform == "whatsapp":
+        received_bot_id = body.get("accountId")
+        if not received_bot_id:
+            data_field = body.get("data", {})
+            received_bot_id = data_field.get("idTo")
+
+        bot_config = redis_client.hgetall(f"bot_config:{received_bot_id}")
+        token = bot_config.get("token") if bot_config else None
+
+        raw_data = body.get("raw", {}).get("data", {})
+        is_group = body.get("isGroup", False)
+        msg_type = "group" if is_group else "private"
+
+        content_text = raw_data.get("content") or body.get("text")
+        sender_id = raw_data.get("uidFrom") or body.get("from")
+        name = raw_data.get("dName") or body.get("from")
+        conv_id = body.get("threadId") or raw_data.get("idTo")
+        message_id = raw_data.get("msgId")
+        # sendter time is body time or now
+        sender_time = body.get("time")
+        title = body.get("title") or "unknown"
+
+        msg_data = {
+            "platform_name": "Whatsapp",
+            "content": content_text,
             "platform_user_id": sender_id,
             "platform_conv_id": conv_id,
             "token": token,

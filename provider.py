@@ -102,8 +102,56 @@ class ZaloProvider:
             raise
 
 
+
+class WhatsappProvider:
+    """Provider for sending messages to WhatsApp via External API."""
+
+    def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a text message via External WhatsApp API."""
+        logger.info("Sending WhatsApp message through external API with data: %s", _mask_token(data))
+
+        # Bot ID is required to identify the account in the external system.
+        bot_id = data.get("bot_id")
+        if not bot_id:
+             logger.error("No bot_id provided for message send.")
+             raise ValueError("bot_id is required for messages")
+
+        url = f"{config.WHATSAPP_EXTERNAL_API_BASE}/api/{bot_id}/send"
+
+        # Map types: 'private' -> 'user'
+        msg_type = data.get("type", "user")
+        if msg_type == "private":
+            msg_type = "user"
+
+        # Mark before sending to prevent race condition (webhook arrives before API response)
+        content = data.get("content", "")
+        # Get conv_id from send data (same as platform_conv_id in webhook)
+        conv_id = data.get("group_id") or data.get("user_id")
+        content_hash = hashlib.md5((content or "").encode()).hexdigest()
+        redis_client.setex(f"bot_sent:{conv_id}:{content_hash}", 60, "1")
+
+        payload = {
+            "text": content,
+            "threadId": conv_id,
+            "type": msg_type,
+        }
+
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            logger.info("Successfully sent message via external WhatsApp API.")
+            return response.json()
+        except RequestException as e:
+            logger.error(
+                "Failed to send message via external WhatsApp API. URL: %s, Error: %s",
+                url,
+                str(e),
+            )
+            raise
+
+
 PROVIDERS: Dict[str, Any] = {
     "Telegram": TelegramProvider(),
-    "Whatapps": ZaloProvider(),
+    "Whatsapp": WhatsappProvider(),
     "Zalo": ZaloProvider(),
 }

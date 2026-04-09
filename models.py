@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional, Union, List
 from pydantic import BaseModel, Field
 
 class BotOptions(BaseModel):
-    platform: str = Field(..., description="Platform type: telegram, zalo, or whatapps", examples=["telegram"])
+    platform: str = Field(..., description="Platform type: telegram, zalo, or whatsapp", examples=["telegram"])
     token: Optional[str] = Field(None, description="Access token for the platform (required for Telegram)", examples=["7123456789:ABCDefgh-IJKLmnopQRstuvwxYZ12345678"])
 
 class CreateBotRequest(BaseModel):

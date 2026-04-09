@@ -90,6 +90,15 @@ def update_message_platform(
                 "datetime": format_datetime(data.get("sent_time")),
             }
         )
+    elif platform_title == "Whatsapp":
+        whatsapp_data: Dict[str, Any] = result.get("data", {})
+        update_payload.update(
+            {
+                "platform_msg_id": str(whatsapp_data.get("message_id", "")),
+                "content": data.get("content", ""),
+                "datetime": format_datetime(data.get("sent_time")),
+            }
+        )
     else:
         logger.warning("Unsupported platform '%s'. Returning base payload.", platform)
 

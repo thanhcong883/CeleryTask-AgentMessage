@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Body, Path, Response
 from models import CreateBotRequest, BotStatusResponse, GenericResponse, SendMessageRequest
 from database import redis_client, get_system_config
 from zalo_service import sync_zalo_webhook, get_zalo_status, get_zalo_qr_code
+from whatsapp_service import sync_whatsapp_webhook, get_whatsapp_status, get_whatsapp_qr_code
 from telegram_service import sync_telegram_webhook, delete_telegram_webhook, get_telegram_webhook_info
 import config
 
@@ -75,9 +76,9 @@ async def create_bot(request: CreateBotRequest):
         except Exception as e:
             logger.error(f"Error creating Zalo bot: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to create Zalo bot: {str(e)}")
-    elif platform == "whatapps":
+    elif platform == "whatsapp":
         try:
-            sync_zalo_webhook(bot_id, base_url)
+            sync_whatsapp_webhook(bot_id, base_url)
             return {"status": "ok", "message": "WhatsApp bot created and webhook configured"}
         except Exception as e:
             logger.error(f"Error creating WhatsApp bot: {e}")
@@ -141,13 +142,13 @@ async def get_bot_status(botId: str = Path(..., description="The ID of the bot t
         except Exception as e:
             return {"status": "down", "platform": "zalo", "error": str(e)}
 
-    elif platform == "whatapps":
+    elif platform == "whatsapp":
         try:
-            status_data = get_zalo_status(bot_id)
+            status_data = get_whatsapp_status(bot_id)
             status = "up" if status_data.get("isAuthenticated") else "down"
-            return {"status": status, "platform": "whatapps", "details": status_data}
+            return {"status": status, "platform": "whatsapp", "details": status_data}
         except Exception as e:
-            return {"status": "down", "platform": "whatapps", "error": str(e)}
+            return {"status": "down", "platform": "whatsapp", "error": str(e)}
 
     return {"status": "unknown", "platform": platform}
 
@@ -163,9 +164,16 @@ async def get_bot_qrcode(botId: str = Path(..., description="The ID of the bot")
 
     platform = bot_config_data.get("platform")
 
-    if platform in ["zalo", "whatapps"]:
+    if platform == "zalo":
         try:
             qr_content = get_zalo_qr_code(bot_id)
+            return Response(content=qr_content, media_type="image/png")
+        except Exception as e:
+            logger.error(f"Error fetching QR code for platform {platform} for bot {bot_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch QR code: {str(e)}")
+    elif platform == "whatsapp":
+        try:
+            qr_content = get_whatsapp_qr_code(bot_id)
             return Response(content=qr_content, media_type="image/png")
         except Exception as e:
             logger.error(f"Error fetching QR code for platform {platform} for bot {bot_id}: {e}")

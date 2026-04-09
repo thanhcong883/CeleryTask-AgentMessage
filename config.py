@@ -46,6 +46,9 @@ CHECK_QUESTION_API: Optional[str] = os.getenv("CHECK_QUESTION_API")
 # External Zalo API Base
 ZALO_EXTERNAL_API_BASE: str = os.getenv("ZALO_EXTERNAL_API_BASE", "http://abc.com")
 
+# External WhatsApp API Base
+WHATSAPP_EXTERNAL_API_BASE: str = os.getenv("WHATSAPP_EXTERNAL_API_BASE", "http://abc.com")
+
 # Security Tokens
 SECRET_TOKEN: str = os.getenv("SECRET_TOKEN")
 HOOK_TOKEN: str = os.getenv("HOOK_TOKEN")

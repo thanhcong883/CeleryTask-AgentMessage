@@ -50,7 +50,7 @@ def sync_all_bots():
                     if token:
                         logger.info(f"Syncing Telegram bot {bot_id} webhook")
                         sync_telegram_webhook(bot_id, token, base_url)
-                elif platform in ["zalo", "whatapps"]:
+                elif platform in ["zalo", "whatsapp"]:
                     logger.info(f"Syncing {platform} webhook for {bot_id}")
                     sync_zalo_webhook(bot_id, base_url)
             except Exception as bot_err:
