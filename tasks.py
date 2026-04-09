@@ -2,9 +2,10 @@
 Celery tasks for message processing and agent communication.
 """
 
+import hashlib
 import logging
 from typing import Any, Callable, Optional, Dict, List, Protocol
-
+import os
 from celery import Celery
 from database import redis_client
 
@@ -140,7 +141,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     platform_name = data.get("platform_name")
     title = data.get("title", "")
     token = data.get("token")
-
+  
     # Notify each admin conversation
     bot_sent_to = data.get("bot_sent_to", [])
     if bot_sent_to:
@@ -157,12 +158,12 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "group_id": conv_info.get("platform_conv_id"),
                 "user_id": conv_info.get("platform_conv_id"),
                 "platform_conv_id": conv_info.get("platform_conv_id"),
-                "platform_name": platform_name,
-                "token": token,
-                "content": f"Có tin nhắn mới cần trợ giúp từ {title}",
+                "platform_name": "Telegram",
+                "token": os.environ.get("TELEGRAM_TOKEN_SUPPORT"),
+                "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
             }
             send_message.apply_async(
-                args=(admin_payload,), queue="celery_send_message"
+                args=(admin_payload, "bot"), queue="celery_send_message"
             )
 
     # Notify customer
@@ -174,9 +175,11 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "platform_conv_id": data.get("platform_conv_id"),
         "token": token,
         "user_id": data.get("user_id"),
+        "bot_id": data.get("bot_id")
     }
+    
     send_message.apply_async(
-        args=(customer_payload,), queue="celery_send_message"
+        args=(customer_payload, "bot"), queue="celery_send_message"
     )
 
 
@@ -187,7 +190,26 @@ def process_message(data: Dict[str, Any]) -> None:
     """
     logger.info("Processing incoming message for %s", data.get("platform_name"))
 
-    # Sync message to Strapi
+    # Handling cases for self-sent messages (Bot, Admin UI or Admin Zalo App)
+    if data.get("isSelf"):
+        msg_id = data.get("platform_msg_id")
+        content = data.get("content", "")
+        platform_conv_id = data.get("platform_conv_id")
+        content_hash = hashlib.md5((content or "").encode()).hexdigest()
+
+        # Check 1: msgId mark (set in on_success_callback)
+        # Check 2: Content Hash mark (set in provider.py before sending)
+        if (msg_id and redis_client.get(f"handled_msg:{msg_id}")) or \
+           redis_client.get(f"bot_sent:{platform_conv_id}:{content_hash}"):
+            logger.info("Bot/Admin system echo detected (by msgId or content-hash). Skipping.")
+            return
+
+        # Case 3: Admin used Zalo App directly -> Sync to Strapi then stop
+        logger.info("Admin manual message detected. Syncing and stopping.")
+        sync_message(data)
+        return
+
+    # Case 4: Customer message -> Sync and proceed to Agent logic
     sync_response = sync_message(data)
     if not sync_response:
         return
@@ -295,6 +317,7 @@ def _schedule_agent_check(
         "token": data.get("token"),
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
+        "bot_id": conversation_info.get("account", {}).get("account_id")
     }
 
     check_agent_answer.apply_async(
@@ -309,7 +332,7 @@ def _schedule_agent_check(
 
 
 @app.task(name="tasks.send_message", queue="celery_send_message")
-def send_message(data: Dict[str, Any]) -> None:
+def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
     """
     Send message and update Strapi with the result.
     """
@@ -319,14 +342,23 @@ def send_message(data: Dict[str, Any]) -> None:
     ) -> None:
         """Callback executed after successful message send."""
         update_payload = update_message_platform(platform, message_data, send_result)
+        
+        # Mark this platform_msg_id as already handled by our system to avoid echo sync
+        platform_msg_id = update_payload.get("platform_msg_id")
+        if platform_msg_id:
+             redis_client.setex(f"handled_msg:{platform_msg_id}", 3600, "1")
 
+        if sender_type == "bot":
+            save_bot_message(message_data)
+        # Update message status in Strapi
         if not message_data.get("message_id"):
             return
-
-        # Update message status in Strapi
         response = update_message(update_payload)
         if not response:
             logger.error("Failed to update message %s", message_data.get("message_id"))
             return
 
     handle_send_message(data, callback=on_success_callback)
+
+
+

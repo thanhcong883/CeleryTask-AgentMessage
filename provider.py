@@ -1,11 +1,11 @@
-"""Provider interfaces for connecting to different messaging platforms."""
-
+import hashlib
 import logging
 import requests
 from requests.exceptions import RequestException
 from typing import Dict, Any
 
 import config
+from database import redis_client
 
 # Configure logging
 logging.basicConfig(
@@ -75,9 +75,16 @@ class ZaloProvider:
         if msg_type == "private":
             msg_type = "user"
 
+        # Mark before sending to prevent race condition (webhook arrives before API response)
+        content = data.get("content", "")
+        # Get conv_id from send data (same as platform_conv_id in webhook)
+        conv_id = data.get("group_id") or data.get("user_id")
+        content_hash = hashlib.md5((content or "").encode()).hexdigest()
+        redis_client.setex(f"bot_sent:{conv_id}:{content_hash}", 60, "1")
+
         payload = {
-            "text": data.get("content"),
-            "threadId": data.get("group_id") or data.get("user_id"),
+            "text": content,
+            "threadId": conv_id,
             "type": msg_type,
         }
 
