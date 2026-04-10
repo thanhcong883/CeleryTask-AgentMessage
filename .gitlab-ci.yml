@@ -2,12 +2,17 @@ include:
   - project: 'devops/cicd'
     ref: 'master'
     file: 'base/remove-img-old.yml'
+###### List stages #######
+
 stages:
   - build
-  - deploy
+  - replace
   - notify_success
   - notify_failure
   - remove_image_old
+
+########template build #######
+
 .build_template:
   before_script:
     - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD
@@ -21,18 +26,7 @@ stages:
     - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery
     - docker rmi $(docker images -f "dangling=true" -q) || true
 
-build_image_dev:
-  stage: build
-  extends: .build_template
-  only:
-    - main
-  tags:
-    - evg
-
-replace-tag-image-dev:
-  needs:
-    - build_image_dev
-  stage: build
+.replace_template:
   variables:
     VALUE_PATH_WEB: chart-core/celery-message/values.yaml
     VALUE_PATH_AGENT: chart-core/celery-message/charts/celery-agent/values.yaml
@@ -55,7 +49,6 @@ replace-tag-image-dev:
     - git fetch
     - git checkout main
     - git reset --hard origin/main
-
   script:
     # Update YAML file
     - yq -i "$TAG_PATH = \"$CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery\"" $VALUE_PATH_WEB
@@ -73,30 +66,60 @@ replace-tag-image-dev:
     - git commit -m "CI Deploy $TAG_PATH to $CI_COMMIT_BRANCH.$CI_COMMIT_SHORT_SHA.celery"
     - git push -o ci.skip origin HEAD:main
 
+.notify_success_template:
+  image: alpine
+  stage: notify_success
+  before_script:
+    - apk add --no-cache curl jq
+  variables:
+    CHAT_ID: "-4916051911"
+    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
+  script:
+    - |
+      curl -X POST "https://api.telegram.org/bot$TOKEN_BOT/sendMessage" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"chat_id\": \"$CHAT_ID\",
+        \"text\": \"✅ *${CI_PROJECT_NAME}* build succeed\n*Branch:* ${CI_COMMIT_REF_NAME}\n*Commit:* ${CI_COMMIT_MESSAGE}\",
+        \"parse_mode\": \"Markdown\" }"
+
+.notify_failure_template:
+  image: alpine
+  stage: notify_failure
+  before_script:
+    - apk add --no-cache curl jq
+  variables:
+    CHAT_ID: "-4916051911"
+    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
+  script:
+    - |
+      curl -X POST "https://api.telegram.org/bot$TOKEN_BOT/sendMessage" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"chat_id\": \"$CHAT_ID\",
+        \"text\": \"❌ *${CI_PROJECT_NAME}* build failed\n*Branch:* ${CI_COMMIT_REF_NAME}\n*Commit:* ${CI_COMMIT_MESSAGE}\",
+        \"parse_mode\": \"Markdown\" }"
+
+######### job build #########
+
+build_image:
+  stage: build
+  extends: .build_template
   only:
     - main
   tags:
     - evg
 
-deploy_k8s:
+replace-tag-image:
   needs:
-    - replace-tag-image-dev
-  stage: deploy
-  image: alpine:latest
-  variables:
-    PATH_DIR: '/root/chart-support-ai-prod/chart-core/celery-message'
-  before_script:
-    - apk add --no-cache openssh-client
-    - chmod 600 "$SSH_KEY_K8S" || true
-  script:
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && git pull origin main"
-    - ssh -i $SSH_KEY_K8S -o StrictHostKeyChecking=no $SSH_USER@$IP_VAN "cd $PATH_DIR && helm --kubeconfig=/kube-config/dev/config upgrade --install prod . -n support-ai"
-  when: manual
-  allow_failure: false
+    - build_image
+  stage: replace
+  extends: .replace_template
   only:
     - main
   tags:
     - evg
+
 
 prune_img_old:
   stage: remove_image_old
@@ -114,18 +137,7 @@ prune_img_old:
 
 
 notify_success:
-  image: alpine
-  needs:
-    - deploy_k8s
-  stage: notify_success
-  before_script:
-    - apk add --no-cache curl jq
-  variables:
-    CHAT_ID: "-4916051911"
-    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
-  script:
-    - |
-      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \"✅ *${CI_PROJECT_NAME}* pipeline succeed on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE}\"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+  extends: .notify_success_template
   when: on_success
   only:
     - main
@@ -134,18 +146,7 @@ notify_success:
 
 
 notify_failure:
-  image: alpine
-  needs:
-    - deploy_k8s
-  stage: notify_failure
-  before_script:
-    - apk add --no-cache curl jq
-  variables:
-    CHAT_ID: "-4916051911"
-    TOKEN_BOT: "8249105997:AAGkbkMTPZlGrMJ5Sukg1aPtDgZu7bSbIjU"
-  script:
-    - |
-      curl -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$CHAT_ID\", \"text\": \" ❌ Project: *$CI_PROJECT_NAME* $JOB_NAME false on branch *${CI_COMMIT_REF_NAME}* of ${CI_COMMIT_MESSAGE} \"}" https://api.telegram.org/bot$TOKEN_BOT/sendMessage
+  extends: .notify_failure_template
   when: on_failure
   allow_failure: false
   only:
