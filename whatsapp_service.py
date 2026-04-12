@@ -19,7 +19,7 @@ def create_whatsapp_account(bot_id: str):
 
 def config_whatsapp_webhook(bot_id: str, base_url: str):
     url = f"{config.WHATSAPP_EXTERNAL_API_BASE}/api/{bot_id}/webhook-config"
-    webhook_url = f"{base_url}/api/hook?platform=whatsapp"
+    webhook_url = f"{base_url}/api/hook?platform=whatsapp&secretToken={config.HOOK_TOKEN}"
     response = requests.post(url, json={"webhookUrl": webhook_url, "secretToken": config.HOOK_TOKEN}, timeout=10)
     response.raise_for_status()
     return response.json()
@@ -32,7 +32,7 @@ def get_whatsapp_webhook_config(bot_id: str):
 
 def sync_whatsapp_webhook(bot_id: str, base_url: str):
     """Checks if the WhatsApp account exists and webhook matches the current base_url."""
-    current_webhook = f"{base_url}/api/hook?platform=whatsapp"
+    current_webhook = f"{base_url}/api/hook?platform=whatsapp&secretToken={config.HOOK_TOKEN}"
     try:
         # 1. Check if account exists
         accounts = get_whatsapp_accounts()

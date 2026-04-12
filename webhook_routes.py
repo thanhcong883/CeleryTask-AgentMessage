@@ -65,26 +65,85 @@ async def universal_hook(
             "isSelf": body.get("isSelf")
         }
     elif platform == "whatsapp":
+        data_field = body.get("data") or {}
+        if not isinstance(data_field, dict):
+            data_field = {}
+
         received_bot_id = body.get("accountId")
         if not received_bot_id:
-            data_field = body.get("data", {})
             received_bot_id = data_field.get("idTo")
 
         bot_config = redis_client.hgetall(f"bot_config:{received_bot_id}")
         token = bot_config.get("token") if bot_config else None
 
-        raw_data = body.get("raw", {}).get("data", {})
-        is_group = body.get("isGroup", False)
+        raw_block = body.get("raw") or {}
+        raw_data = raw_block.get("data", {}) if isinstance(raw_block, dict) else {}
+        if not isinstance(raw_data, dict):
+            raw_data = {}
+
+        is_group = bool(body.get("isGroup") or data_field.get("isGroup", False))
         msg_type = "group" if is_group else "private"
 
-        content_text = raw_data.get("content") or body.get("text")
-        sender_id = raw_data.get("uidFrom") or body.get("from")
-        name = raw_data.get("dName") or body.get("from")
-        conv_id = body.get("threadId") or raw_data.get("idTo")
-        message_id = raw_data.get("msgId")
-        # sendter time is body time or now
-        sender_time = body.get("time")
-        title = body.get("title") or "unknown"
+        wa_msg = data_field.get("message")
+        wa_msg = wa_msg if isinstance(wa_msg, dict) else {}
+
+        ext_text = wa_msg.get("extendedTextMessage") or {}
+        img = wa_msg.get("imageMessage") or {}
+        vid = wa_msg.get("videoMessage") or {}
+        content_text = (
+            wa_msg.get("conversation")
+            or ext_text.get("text")
+            or img.get("caption")
+            or vid.get("caption")
+            or raw_data.get("content")
+            or body.get("text")
+            or data_field.get("text")
+        )
+
+        if is_group:
+            sender_id = (
+                data_field.get("participant")
+                or raw_data.get("uidFrom")
+                or body.get("from")
+            )
+            conv_id = (
+                body.get("threadId")
+                or data_field.get("from")
+                or raw_data.get("idTo")
+            )
+            title = (
+                data_field.get("group_name")
+                or body.get("title")
+                or "unknown"
+            )
+            name = (
+                data_field.get("user_name")
+                or raw_data.get("dName")
+                or sender_id
+                or "unknown"
+            )
+        else:
+            sender_id = (
+                data_field.get("from")
+                or raw_data.get("uidFrom")
+                or body.get("from")
+            )
+            conv_id = (
+                body.get("threadId")
+                or data_field.get("from")
+                or raw_data.get("idTo")
+                or sender_id
+            )
+            title = body.get("title") or data_field.get("user_name") or "unknown"
+            name = (
+                data_field.get("user_name")
+                or raw_data.get("dName")
+                or sender_id
+                or "unknown"
+            )
+
+        message_id = data_field.get("message_id") or raw_data.get("msgId")
+        sender_time = body.get("time") or data_field.get("time") or data_field.get("timestamp")
 
         msg_data = {
             "platform_name": "Whatsapp",
@@ -98,7 +157,7 @@ async def universal_hook(
             "platform_msg_id": message_id,
             "sender_time": sender_time,
             "title": title,
-            "isSelf": body.get("isSelf")
+            "isSelf": body.get("isSelf"),
         }
     elif platform == "telegram":
         # {'update_id': 695761324, 'message': {'message_id': 77, 'from': {'id': 688310870, 'is_bot': False, 'first_name': 'Kiên', 'last_name': 'Hữu', 'username': 'Kiennh', 'language_code': 'en'}, 'chat': {'id': -5236384276, 'title': 'Kiên & agc', 'type': 'group', 'all_members_are_administrators': False, 'accepted_gift_types': {'unlimited_gifts': False, 'limited_gifts': False, 'unique_gifts': False, 'premium_subscription': False, 'gifts_from_channels': False}}, 'date': 1774945399, 'text': '1'}}
