@@ -91,10 +91,25 @@ def update_message_platform(
             }
         )
     elif platform_title == "Whatsapp":
-        whatsapp_data: Dict[str, Any] = result.get("data", {})
+        # The external API might return the ID in different formats depending on the provider
+        # Try to extract from common locations
+        whatsapp_data: Dict[str, Any] = result.get("data") or result
+        
+        platform_msg_id = (
+            whatsapp_data.get("message_id") or 
+            whatsapp_data.get("id") or 
+            (whatsapp_data.get("key", {}).get("id") if isinstance(whatsapp_data.get("key"), dict) else "") or
+            result.get("message_id") or
+            result.get("id") or
+            ""
+        )
+        
+        if not platform_msg_id:
+            logger.warning("Could not extract platform_msg_id from WhatsApp response: %s", result)
+            
         update_payload.update(
             {
-                "platform_msg_id": str(whatsapp_data.get("message_id", "")),
+                "platform_msg_id": str(platform_msg_id),
                 "content": data.get("content", ""),
                 "datetime": format_datetime(data.get("sent_time")),
             }
