@@ -175,9 +175,9 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "platform_conv_id": data.get("platform_conv_id"),
         "token": token,
         "user_id": data.get("user_id"),
-        "bot_id": data.get("bot_id") or data.get("account_id")
+        "bot_id": data.get("bot_id")
     }
-    
+
     send_message.apply_async(
         args=(customer_payload, "bot"), queue="celery_send_message"
     )
@@ -325,7 +325,7 @@ def _schedule_agent_check(
         "user_id": data.get("platform_user_id"),
         "platform_name": data.get("platform_name"),
         "bot_message": conversation_info.get("bot_message", ""),
-        "token": data.get("token") or (conversation_info.get("account") or {}).get("token"),
+        "token": data.get("token"),
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
         "bot_id": bot_id
