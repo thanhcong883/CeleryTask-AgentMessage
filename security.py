@@ -4,7 +4,7 @@ import config
 
 logger = logging.getLogger(__name__)
 
-def verify_token(request: Request, expected_token: str):
+async def verify_token(request: Request, expected_token: str):
     """
     Verifies the presence and validity of a token in the request headers.
     Checks 'Authorization: Bearer {token}', 'Authentication: Bearer {token}'
@@ -16,20 +16,41 @@ def verify_token(request: Request, expected_token: str):
     secret_token_header = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
 
     token = None
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-    elif alt_auth_header and alt_auth_header.startswith("Bearer "):
-        token = alt_auth_header[7:]
+    if auth_header:
+        token = auth_header[7:] if auth_header.startswith("Bearer ") else auth_header
+    elif alt_auth_header:
+        token = alt_auth_header[7:] if alt_auth_header.startswith("Bearer ") else alt_auth_header
     elif secret_token_header:
         token = secret_token_header
+    elif request.headers.get("X-Secret-Token"):
+        token = request.headers.get("X-Secret-Token")
+    elif request.headers.get("X-Webhook-Secret"):
+        token = request.headers.get("X-Webhook-Secret")
+    elif request.headers.get("Secret-Token"):
+        token = request.headers.get("Secret-Token")
+        
+    if not token and request.query_params.get("token"):
+        token = request.query_params.get("token")
+    if not token and request.query_params.get("secretToken"):
+        token = request.query_params.get("secretToken")
+    if not token and request.query_params.get("secret_token"):
+        token = request.query_params.get("secret_token")
+        
+    if not token and request.method in ["POST", "PUT"]:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                token = body.get("secretToken") or body.get("secret_token") or body.get("token")
+        except Exception:
+            pass
 
     if not token or token != expected_token:
-        logger.warning(f"Unauthorized access attempt to {request.url.path}")
+        logger.warning(f"Unauthorized access attempt to {request.url.path}. Headers: {request.headers}")
         raise HTTPException(status_code=403, detail="Forbidden")
     return token
 
 async def verify_secret_token(request: Request):
-    return verify_token(request, config.SECRET_TOKEN)
+    return await verify_token(request, config.SECRET_TOKEN)
 
 async def verify_hook_token(request: Request):
-    return verify_token(request, config.HOOK_TOKEN)
+    return await verify_token(request, config.HOOK_TOKEN)

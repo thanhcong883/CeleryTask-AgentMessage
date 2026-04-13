@@ -217,6 +217,7 @@ def process_message(data: Dict[str, Any]) -> None:
     # Extract conversation and message IDs
     try:
         noti_data = sync_response.json().get("data", [])
+        logger.info("Sync response: %s", noti_data)
         if not noti_data:
             logger.error("Empty response from sync message API")
             return

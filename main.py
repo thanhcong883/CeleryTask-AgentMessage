@@ -7,6 +7,7 @@ import httpx
 import base64
 from database import redis_client, get_system_config, update_system_config, CONFIG_REDIS_KEY
 from zalo_service import sync_zalo_webhook
+from whatsapp_service import sync_whatsapp_webhook
 from telegram_service import sync_telegram_webhook
 from bot_routes import router as bot_router
 from webhook_routes import router as webhook_router
@@ -19,6 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Application Initialization ---
+
 
 app = FastAPI(
     title="Bot Management System API",
@@ -50,9 +52,12 @@ def sync_all_bots():
                     if token:
                         logger.info(f"Syncing Telegram bot {bot_id} webhook")
                         sync_telegram_webhook(bot_id, token, base_url)
-                elif platform in ["zalo", "whatapps"]:
+                elif platform == "zalo":
                     logger.info(f"Syncing {platform} webhook for {bot_id}")
                     sync_zalo_webhook(bot_id, base_url)
+                elif platform == "whatsapp":
+                    logger.info(f"Syncing {platform} webhook for {bot_id}")
+                    sync_whatsapp_webhook(bot_id, base_url)
             except Exception as bot_err:
                 logger.error(f"Error syncing bot {key}: {bot_err}")
 
