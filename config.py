@@ -44,10 +44,10 @@ N8N_AGENT_WEBHOOK: Optional[str] = os.getenv("N8N_AGENT_WEBHOOK")
 CHECK_QUESTION_API: Optional[str] = os.getenv("CHECK_QUESTION_API")
 
 # External Zalo API Base
-ZALO_EXTERNAL_API_BASE: str = os.getenv("ZALO_EXTERNAL_API_BASE", "http://abc.com")
+ZALO_EXTERNAL_API_BASE: str = os.getenv("ZALO_EXTERNAL_API_BASE")
 
 # External WhatsApp API Base
-WHATSAPP_EXTERNAL_API_BASE: str = os.getenv("WHATSAPP_EXTERNAL_API_BASE", "http://abc.com")
+WHATSAPP_EXTERNAL_API_BASE: str = os.getenv("WHATSAPP_EXTERNAL_API_BASE")
 
 # Security Tokens
 SECRET_TOKEN: str = os.getenv("SECRET_TOKEN")

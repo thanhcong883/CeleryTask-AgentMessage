@@ -175,7 +175,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "platform_conv_id": data.get("platform_conv_id"),
         "token": token,
         "user_id": data.get("user_id"),
-        "bot_id": data.get("bot_id")
+        "bot_id": data.get("bot_id") or data.get("account_id")
     }
     
     send_message.apply_async(
@@ -274,7 +274,6 @@ def process_message(data: Dict[str, Any]) -> None:
     # NEW DEBOUNCE LOGIC:
     redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
     logger.info("Set latest user message for %s to %s", conversation_id, message_id)
-
     # Check if the question needs agent processing
     _schedule_agent_check(data, conversation_id, message_id, conversation_info)
 
@@ -302,7 +301,18 @@ def _schedule_agent_check(
         logger.error("Failed to parse response from check_question")
         return
 
-    time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
+    time_to_use_agent = conversation_info.get("time_to_use_agent")
+    if time_to_use_agent is None:
+        time_to_use_agent = 0
+
+    bot_id = (
+        (conversation_info.get("account") or {}).get("account_id") or 
+        data.get("bot_id") or 
+        data.get("account_id")
+    )
+    
+    if not bot_id:
+        logger.warning("bot_id is missing for conversation %s. This may cause sending errors for Zalo/WhatsApp.", conversation_id)
 
     agent_check_data = {
         "conversation": conversation_id,
@@ -315,10 +325,10 @@ def _schedule_agent_check(
         "user_id": data.get("platform_user_id"),
         "platform_name": data.get("platform_name"),
         "bot_message": conversation_info.get("bot_message", ""),
-        "token": data.get("token"),
+        "token": data.get("token") or (conversation_info.get("account") or {}).get("token"),
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
-        "bot_id": conversation_info.get("account", {}).get("account_id")
+        "bot_id": bot_id
     }
 
     check_agent_answer.apply_async(
