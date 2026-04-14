@@ -131,7 +131,7 @@ prune_img_old:
     GITOPS_SECRET: huyabc321
     GITOPS: http://img-old-delete-img-old.argocd/delete
   only:
-    - dev
+    - main
   tags:
     - k8s-dev
 
