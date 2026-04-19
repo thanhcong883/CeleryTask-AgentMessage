@@ -162,6 +162,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "token": os.environ.get("TELEGRAM_TOKEN_SUPPORT"),
                 "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
             }
+            logger.info("Admin payload: %s", admin_payload)
             send_message.apply_async(
                 args=(admin_payload, "bot"), queue="celery_send_message"
             )
@@ -177,7 +178,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "user_id": data.get("user_id"),
         "bot_id": data.get("bot_id")
     }
-
+    logger.info("Customer payload: %s", customer_payload)
     send_message.apply_async(
         args=(customer_payload, "bot"), queue="celery_send_message"
     )
@@ -361,10 +362,12 @@ def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
 
         if sender_type == "bot":
             save_bot_message(message_data)
+        logger.info("Save bot message success: %s", message_data)
         # Update message status in Strapi
         if not message_data.get("message_id"):
             return
         response = update_message(update_payload)
+        logger.info("Update message: %s", response)
         if not response:
             logger.error("Failed to update message %s", message_data.get("message_id"))
             return
