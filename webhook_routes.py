@@ -48,7 +48,11 @@ async def universal_hook(
         message_id = raw_data.get("msgId")
         # sendter time is body time or now
         sender_time = body.get("time")
-        title = body.get("title") or "unknown"
+        # Pass title through as-is (may be None). zca2api now resolves group names /
+        # remote user display names and sends them in `title`. If it's missing, leave it
+        # empty so Strapi can fall back to its own default (customer name for private,
+        # "unknown" for groups) instead of us hard-coding "unknown" over a known name.
+        title = body.get("title") or None
 
         msg_data = {
             "platform_name": "Zalo",
@@ -83,6 +87,11 @@ async def universal_hook(
 
         is_group = bool(body.get("isGroup") or data_field.get("isGroup", False))
         msg_type = "group" if is_group else "private"
+
+        # Baileys (baileys2api) puts isSelf inside `data.isSelf`, not at the top level.
+        # Without reading both locations, self-sent messages are misclassified as customer
+        # messages and their sender_id collides with the remote party in private chats.
+        is_self = bool(body.get("isSelf") or data_field.get("isSelf", False))
 
         wa_msg = data_field.get("message")
         wa_msg = wa_msg if isinstance(wa_msg, dict) else {}
@@ -123,16 +132,26 @@ async def universal_hook(
                 or "unknown"
             )
         else:
-            sender_id = (
+            # In private chats, `data.from` is always the REMOTE party's JID (the customer),
+            # even for messages the bot owner sends from their own WhatsApp app (isSelf=true).
+            # If we kept that as sender_id, the admin's self-sent messages would share the
+            # customer's record and overwrite the customer's display name on every new
+            # message. For self-sent private messages use the bot account id as sender_id so
+            # Strapi keeps a distinct customer record for the admin.
+            remote_jid = (
                 data_field.get("from")
                 or raw_data.get("uidFrom")
                 or body.get("from")
             )
+            if is_self:
+                sender_id = received_bot_id or remote_jid
+            else:
+                sender_id = remote_jid
             conv_id = (
                 body.get("threadId")
                 or data_field.get("from")
                 or raw_data.get("idTo")
-                or sender_id
+                or remote_jid
             )
             title = body.get("title") or data_field.get("user_name") or "unknown"
             name = (
@@ -157,7 +176,7 @@ async def universal_hook(
             "platform_msg_id": message_id,
             "sender_time": sender_time,
             "title": title,
-            "isSelf": body.get("isSelf"),
+            "isSelf": is_self,
         }
     elif platform == "telegram":
         # {'update_id': 695761324, 'message': {'message_id': 77, 'from': {'id': 688310870, 'is_bot': False, 'first_name': 'Kiên', 'last_name': 'Hữu', 'username': 'Kiennh', 'language_code': 'en'}, 'chat': {'id': -5236384276, 'title': 'Kiên & agc', 'type': 'group', 'all_members_are_administrators': False, 'accepted_gift_types': {'unlimited_gifts': False, 'limited_gifts': False, 'unique_gifts': False, 'premium_subscription': False, 'gifts_from_channels': False}}, 'date': 1774945399, 'text': '1'}}
