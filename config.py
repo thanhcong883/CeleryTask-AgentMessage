@@ -84,3 +84,7 @@ PLATFORMS: Dict[str, Dict[str, str]] = {
         "group_url": "https://openapi.zalo.me/v3.0/oa/group/message",
     },
 }
+
+# Strapi Media Upload
+STRAPI_UPLOAD: str = f"{STRAPI_API_BASE}/upload"
+STRAPI_UPLOAD_FOLDER: str = f"{STRAPI_API_BASE}/upload/folders"

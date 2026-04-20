@@ -1,3 +1,5 @@
+import os
+
 """
 API client utilities for making HTTP requests to backend services.
 """
@@ -260,6 +262,7 @@ def call_agent_webhook(payload: Dict[str, Any]) -> Optional[requests.Response]:
     """
     import os
     import json
+
     try:
         from openai import OpenAI
     except ImportError:
@@ -271,10 +274,10 @@ def call_agent_webhook(payload: Dict[str, Any]) -> Optional[requests.Response]:
             base_url="https://ark.ap-southeast.bytepluses.com/api/v3",
             api_key=os.environ.get("ARK_API_KEY"),
         )
-        
+
         question = payload.get("question", "")
         history_chat = json.dumps(payload.get("history_chat", []), ensure_ascii=False)
-        
+
         system_prompt = f"""ROLE:
 You are a strict answer-verification engine.
 
@@ -339,7 +342,7 @@ Do NOT add text."""
         class _DummyResponse:
             def json(self):
                 return {"output": output_val}
-                
+
         return _DummyResponse()
     except Exception as e:
         logger.error("call_agent_webhook API call failed: %s", e)
@@ -357,6 +360,7 @@ def check_question(content: str) -> Optional[requests.Response]:
         Response object if successful, None otherwise
     """
     import os
+
     try:
         from openai import OpenAI
     except ImportError:
@@ -402,7 +406,7 @@ Return false if the message:
                 {
                     "role": "user",
                     "content": f"Message:\n\n{content}",
-                }
+                },
             ],
             temperature=0.0,
         )
@@ -413,7 +417,7 @@ Return false if the message:
         class _DummyResponse:
             def json(self):
                 return {"output": output_val}
-                
+
         return _DummyResponse()
     except Exception as e:
         logger.error("check_question API call failed: %s", e)
@@ -466,3 +470,87 @@ def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         }
         for msg in history
     ]
+
+
+def create_strapi_folder(folder_path: str) -> Optional[int]:
+    """
+    Creates nested folders in Strapi Media Library based on path.
+    Args:
+        folder_path: A path like "YYYY/MM/DD/platform/conv_id/HH"
+    Returns:
+        The integer ID of the final folder, or None on failure.
+    """
+    parts = [p for p in folder_path.split("/") if p]
+    current_parent_id = None
+
+    for part in parts:
+        # 1. Check if folder exists
+        params = {"filters[name][$eq]": part}
+        if current_parent_id is not None:
+            params["filters[parent][id][$eq]"] = current_parent_id
+
+        url = config.STRAPI_UPLOAD_FOLDER
+        response = api_get(url, params=params, headers=config.HEADERS_API_BACKEND)
+
+        folder_id = None
+        if response and response.status_code == 200:
+            data = response.json().get("data", [])
+            if data:
+                folder_id = data[0].get("id")
+
+        # 2. If it doesn't exist, create it
+        if folder_id is None:
+            payload = {"name": part}
+            if current_parent_id is not None:
+                payload["parent"] = current_parent_id
+
+            create_response = api_post(
+                url, json_data=payload, headers=config.HEADERS_API_BACKEND
+            )
+            if create_response and create_response.status_code == 200:
+                data = create_response.json().get("data", {})
+                folder_id = data.get("id")
+            else:
+                logger.error(f"Failed to create Strapi folder: {part}")
+                return None
+
+        current_parent_id = folder_id
+
+    return current_parent_id
+
+
+def upload_to_strapi(file_path: str, folder_id: Optional[int] = None) -> Optional[int]:
+    """
+    Uploads a local file to Strapi Media Library.
+    Args:
+        file_path: Local path to the file.
+        folder_id: Optional Strapi folder ID.
+    Returns:
+        The ID of the uploaded media, or None on failure.
+    """
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return None
+
+    url = config.STRAPI_UPLOAD
+    headers = {"Authorization": config.STRAPI_TOKEN}
+
+    try:
+        with open(file_path, "rb") as f:
+            files = {"files": f}
+            data = {}
+            if folder_id is not None:
+                data["fileInfo"] = f'{{"folder": {folder_id}}}'
+
+            response = requests.post(
+                url, files=files, data=data, headers=headers, timeout=60
+            )
+            response.raise_for_status()
+
+            resp_data = response.json()
+            if resp_data and isinstance(resp_data, list):
+                return resp_data[0].get("id")
+            return None
+    except Exception as e:
+        logger.error(f"Failed to upload to Strapi: {e}")
+        return None
