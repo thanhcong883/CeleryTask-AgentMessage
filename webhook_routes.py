@@ -67,7 +67,7 @@ async def universal_hook(
         title = body.get("title") or "unknown"
 
         message_type = "text"
-        attachments = []
+        media_urls = []
         msg_type_zalo = raw_data.get("msgType")
         if msg_type_zalo in ["share.file", "chat.photo", "chat.video", "chat.voice"]:
             content_data = raw_data.get("content", {})
@@ -106,15 +106,15 @@ async def universal_hook(
                 local_path = os.path.join("/tmp/downloads", folder_path, filename)
 
                 if download_file_generic(href, local_path):
-                    strapi_folder_id = create_strapi_folder(folder_path)
-                    media_id = upload_to_strapi(local_path, strapi_folder_id)
-                    if media_id:
-                        attachments.append(media_id)
+                    s3_key = f"{folder_path}/{filename}"
+                    s3_url = upload_to_s3(local_path, s3_key)
+                    if s3_url:
+                        media_urls.append(s3_url)
 
         msg_data = {
             "platform_name": "Zalo",
             "message_type": message_type,
-            "attachments": attachments,
+            "media_urls": media_urls,
             "content": content,
             "platform_user_id": sender_id,
             "platform_conv_id": conv_id,
@@ -203,7 +203,7 @@ async def universal_hook(
         )
 
         message_type = "text"
-        attachments = []
+        media_urls = []
         wa_msg = data_field.get("message")
         wa_msg = wa_msg if isinstance(wa_msg, dict) else {}
 
@@ -226,15 +226,15 @@ async def universal_hook(
             local_path = os.path.join("/tmp/downloads", folder_path, filename)
 
             if download_file_generic(media_url, local_path):
-                strapi_folder_id = create_strapi_folder(folder_path)
-                media_id = upload_to_strapi(local_path, strapi_folder_id)
-                if media_id:
-                    attachments.append(media_id)
+                s3_key = f"{folder_path}/{filename}"
+                s3_url = upload_to_s3(local_path, s3_key)
+                if s3_url:
+                    media_urls.append(s3_url)
 
         msg_data = {
             "platform_name": "Whatsapp",
             "message_type": message_type,
-            "attachments": attachments,
+            "media_urls": media_urls,
             "content": content_text,
             "platform_user_id": sender_id,
             "platform_conv_id": conv_id,
@@ -280,7 +280,7 @@ async def universal_hook(
         title = chat.get("title")
 
         message_type = "text"
-        attachments = []
+        media_urls = []
         file_id = None
         ext = "bin"
 
@@ -305,15 +305,15 @@ async def universal_hook(
             local_path = os.path.join("/tmp/downloads", folder_path, filename)
 
             if download_telegram_file(file_id, token, local_path):
-                strapi_folder_id = create_strapi_folder(folder_path)
-                media_id = upload_to_strapi(local_path, strapi_folder_id)
-                if media_id:
-                    attachments.append(media_id)
+                s3_key = f"{folder_path}/{filename}"
+                s3_url = upload_to_s3(local_path, s3_key)
+                if s3_url:
+                    media_urls.append(s3_url)
 
         msg_data = {
             "platform_name": "Telegram",
             "message_type": message_type,
-            "attachments": attachments,
+            "media_urls": media_urls,
             "content": message.get("text", message.get("caption", "")),
             "platform_user_id": str(from_user.get("id")),
             "platform_conv_id": str(chat.get("id")),

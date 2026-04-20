@@ -88,3 +88,9 @@ PLATFORMS: Dict[str, Dict[str, str]] = {
 # Strapi Media Upload
 STRAPI_UPLOAD: str = f"{STRAPI_API_BASE}/upload"
 STRAPI_UPLOAD_FOLDER: str = f"{STRAPI_API_BASE}/upload/folders"
+
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+AWS_BUCKET_NAME: Optional[str] = os.getenv("AWS_BUCKET_NAME")

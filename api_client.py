@@ -471,67 +471,6 @@ def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for msg in history
     ]
 
-
-def create_strapi_folder(folder_path: str) -> Optional[int]:
-    """
-    Creates nested folders in Strapi Media Library based on path.
-    Args:
-        folder_path: A path like "YYYY/MM/DD/platform/conv_id/HH"
-    Returns:
-        The integer ID of the final folder, or None on failure.
-    """
-    parts = [p for p in folder_path.split("/") if p]
-    current_parent_id = None
-
-    for part in parts:
-        # 1. Check if folder exists
-        params = {"filters[name][$eq]": part}
-        if current_parent_id is not None:
-            params["filters[parent][id][$eq]"] = current_parent_id
-
-        url = config.STRAPI_UPLOAD_FOLDER
-        response = api_get(url, params=params, headers=config.HEADERS_API_BACKEND)
-
-        folder_id = None
-        if response and response.status_code == 200:
-            data = response.json().get("data", [])
-            if data:
-                folder_id = data[0].get("id")
-
-        # 2. If it doesn't exist, create it
-        if folder_id is None:
-            payload = {"name": part}
-            if current_parent_id is not None:
-                payload["parent"] = current_parent_id
-
-            create_response = api_post(
-                url, json_data=payload, headers=config.HEADERS_API_BACKEND
-            )
-            if create_response and create_response.status_code == 200:
-                data = create_response.json().get("data", {})
-                folder_id = data.get("id")
-            else:
-                logger.error(f"Failed to create Strapi folder: {part}")
-                return None
-
-        current_parent_id = folder_id
-
-    return current_parent_id
-
-
-def upload_to_strapi(file_path: str, folder_id: Optional[int] = None) -> Optional[int]:
-    """
-    Uploads a local file to Strapi Media Library.
-    Args:
-        file_path: Local path to the file.
-        folder_id: Optional Strapi folder ID.
-    Returns:
-        The ID of the uploaded media, or None on failure.
-    """
-    if not os.path.exists(file_path):
-        logger.error(f"File not found: {file_path}")
-        return None
-
     url = config.STRAPI_UPLOAD
     headers = {"Authorization": config.STRAPI_TOKEN}
 

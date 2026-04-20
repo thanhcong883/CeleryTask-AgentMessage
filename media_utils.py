@@ -1,3 +1,6 @@
+import boto3
+from botocore.exceptions import ClientError
+import config
 import os
 import time
 import requests
@@ -63,3 +66,49 @@ def download_telegram_file(file_id: str, token: str, save_path: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to download telegram file {file_id}: {e}")
         return False
+
+
+def upload_to_s3(local_path: str, s3_key: str) -> Optional[str]:
+    """
+    Upload a file to an S3 bucket
+
+    :param local_path: File to upload
+    :param s3_key: S3 object name (e.g. year/month/day/platform/conv_id/filename.ext)
+    :return: S3 public URL if successful, else None
+    """
+    if (
+        not config.AWS_ACCESS_KEY_ID
+        or not config.AWS_SECRET_ACCESS_KEY
+        or not config.AWS_BUCKET_NAME
+    ):
+        logger.error("AWS credentials or bucket name not configured.")
+        return None
+
+    s3_client = boto3.client(
+        "s3",
+        aws_access_key_id=config.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY,
+        region_name=config.AWS_REGION,
+    )
+
+    try:
+        s3_client.upload_file(local_path, config.AWS_BUCKET_NAME, s3_key)
+
+        # Determine the URL format based on region (standard AWS format)
+        if config.AWS_REGION == "us-east-1":
+            url = f"https://{config.AWS_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+        else:
+            url = f"https://{config.AWS_BUCKET_NAME}.s3.{config.AWS_REGION}.amazonaws.com/{s3_key}"
+
+        logger.info(f"Successfully uploaded {local_path} to {url}")
+
+        # Cleanup local file after successful upload
+        try:
+            os.remove(local_path)
+        except Exception as e:
+            logger.warning(f"Failed to remove local file {local_path}: {e}")
+
+        return url
+    except ClientError as e:
+        logger.error(f"Failed to upload {local_path} to S3: {e}")
+        return None

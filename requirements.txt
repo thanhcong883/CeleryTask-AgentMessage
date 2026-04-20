@@ -11,3 +11,4 @@ python-telegram-bot==21.6
 py-localtunnel==1.0.3
 httpx==0.27.2
 openai>=1.0.0
+boto3>=1.28.0
