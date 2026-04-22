@@ -1,3 +1,5 @@
+import os
+
 """
 API client utilities for making HTTP requests to backend services.
 """
@@ -260,6 +262,7 @@ def call_agent_webhook(payload: Dict[str, Any]) -> Optional[requests.Response]:
     """
     import os
     import json
+
     try:
         from openai import OpenAI
     except ImportError:
@@ -271,10 +274,10 @@ def call_agent_webhook(payload: Dict[str, Any]) -> Optional[requests.Response]:
             base_url="https://ark.ap-southeast.bytepluses.com/api/v3",
             api_key=os.environ.get("ARK_API_KEY"),
         )
-        
+
         question = payload.get("question", "")
         history_chat = json.dumps(payload.get("history_chat", []), ensure_ascii=False)
-        
+
         system_prompt = f"""ROLE:
 You are a strict answer-verification engine.
 
@@ -339,7 +342,7 @@ Do NOT add text."""
         class _DummyResponse:
             def json(self):
                 return {"output": output_val}
-                
+
         return _DummyResponse()
     except Exception as e:
         logger.error("call_agent_webhook API call failed: %s", e)
@@ -357,6 +360,7 @@ def check_question(content: str) -> Optional[requests.Response]:
         Response object if successful, None otherwise
     """
     import os
+
     try:
         from openai import OpenAI
     except ImportError:
@@ -402,7 +406,7 @@ Return false if the message:
                 {
                     "role": "user",
                     "content": f"Message:\n\n{content}",
-                }
+                },
             ],
             temperature=0.0,
         )
@@ -413,7 +417,7 @@ Return false if the message:
         class _DummyResponse:
             def json(self):
                 return {"output": output_val}
-                
+
         return _DummyResponse()
     except Exception as e:
         logger.error("check_question API call failed: %s", e)
@@ -448,6 +452,12 @@ def find_user_role(
     )
 
 
+_MESSAGE_TYPE_MARKER = {
+    "image": "[image]",
+    "file": "[file]",
+}
+
+
 def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Build history chat format for agent payload.
@@ -456,13 +466,24 @@ def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         history: List of message history
 
     Returns:
-        Formatted history list
+        Formatted history list. Non-text messages get a `[image]` or `[file]`
+        marker prepended to content so the agent is aware of attachments
+        without needing the raw URL.
     """
-    return [
-        {
-            "role": msg.get("sender_type"),
-            "content": msg.get("content"),
-            "datetime": msg.get("datetime"),
-        }
-        for msg in history
-    ]
+    result: List[Dict[str, Any]] = []
+    for msg in history:
+        content = msg.get("content") or ""
+        message_type = msg.get("message_type")
+
+        marker = _MESSAGE_TYPE_MARKER.get(message_type)
+        if marker:
+            content = f"{marker} {content}".strip()
+
+        result.append(
+            {
+                "role": msg.get("sender_type"),
+                "content": content,
+                "datetime": msg.get("datetime"),
+            }
+        )
+    return result

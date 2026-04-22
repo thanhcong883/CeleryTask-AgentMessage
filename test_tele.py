@@ -2,7 +2,10 @@ import requests
 import pytest
 import time
 
-def test_telegram_bot_lifecycle(server_process, worker_process, tunnel_url, test_env, request_with_retry):
+
+def test_telegram_bot_lifecycle(
+    server_process, worker_process, tunnel_url, test_env, request_with_retry
+):
     BASE_URL = f"{tunnel_url}/api"
     bot_id = "pytest_tg_bot"
     token = test_env["token"]
@@ -13,10 +16,7 @@ def test_telegram_bot_lifecycle(server_process, worker_process, tunnel_url, test
     # 1. Create Bot
     create_payload = {
         "botId": bot_id,
-        "options": {
-            "platform": "telegram",
-            "token": token
-        }
+        "options": {"platform": "telegram", "token": token},
     }
     response = request_with_retry("POST", f"{BASE_URL}/bots", json=create_payload)
     assert response.status_code == 200
@@ -42,7 +42,10 @@ def test_telegram_bot_lifecycle(server_process, worker_process, tunnel_url, test
     response = request_with_retry("GET", f"{BASE_URL}/bots/{bot_id}/status")
     assert response.status_code == 404
 
-def test_manual_message_receipt(server_process, worker_process, tunnel_url, test_env, request_with_retry):
+
+def test_manual_message_receipt(
+    server_process, worker_process, tunnel_url, test_env, request_with_retry
+):
     """
     Test that the bot can receive a manual message from a real user via Webhook.
     This test waits for 5 minutes for a message to arrive in the group.
@@ -62,7 +65,7 @@ def test_manual_message_receipt(server_process, worker_process, tunnel_url, test
     # 1. Create Bot (automatically sets webhook to tunnel_url)
     create_payload = {
         "botId": bot_id,
-        "options": {"platform": "telegram", "token": token}
+        "options": {"platform": "telegram", "token": token},
     }
     response = request_with_retry("POST", f"{BASE_URL}/bots", json=create_payload)
     assert response.status_code == 200
@@ -70,12 +73,13 @@ def test_manual_message_receipt(server_process, worker_process, tunnel_url, test
     # 2. Wait for Webhook initialization and send an invitation message
     time.sleep(5)
     import uuid
+
     random_text = f"TEST-{uuid.uuid4().hex[:8]}"
 
     send_payload = {
         "content": f"TEST START: Please send the following exact text to this group within 5 minutes:\n\n{random_text}",
         "group_id": group_id,
-        "type": "group"
+        "type": "group",
     }
     request_with_retry("POST", f"{BASE_URL}/bots/{bot_id}/send", json=send_payload)
 
@@ -85,7 +89,7 @@ def test_manual_message_receipt(server_process, worker_process, tunnel_url, test
 
     received = False
     start_time = time.time()
-    timeout = 300 # 5 minutes
+    timeout = 300  # 5 minutes
 
     while time.time() - start_time < timeout:
         # Check /api/messages endpoint (which returns messages stored in Redis)
@@ -94,7 +98,9 @@ def test_manual_message_receipt(server_process, worker_process, tunnel_url, test
             if resp.status_code == 200:
                 messages = resp.json().get("messages", [])
                 for msg in messages:
-                    if msg.get("content") == random_text and str(msg.get("platform_conv_id")) == str(group_id):
+                    if msg.get("content") == random_text and str(
+                        msg.get("platform_conv_id")
+                    ) == str(group_id):
                         print(f"\n>>> SUCCESS! Received match: {msg['content']}")
                         received = True
                         break
@@ -108,4 +114,6 @@ def test_manual_message_receipt(server_process, worker_process, tunnel_url, test
     # Cleanup
     request_with_retry("DELETE", f"{BASE_URL}/bots/{bot_id}")
 
-    assert received, f"Did not receive the expected text '{random_text}' in the group within 5 minutes."
+    assert (
+        received
+    ), f"Did not receive the expected text '{random_text}' in the group within 5 minutes."

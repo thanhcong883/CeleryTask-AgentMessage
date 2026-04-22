@@ -6,6 +6,7 @@ from database import redis_client
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
 
+
 @router.get("", summary="Get all received messages from Redis")
 async def get_received_messages():
     """Retrieves all received messages currently stored in Redis (up to 10 mins old)."""

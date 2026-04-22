@@ -60,13 +60,15 @@ class ZaloProvider:
 
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Send a text message via External Zalo API."""
-        logger.info("Sending Zalo message through external API with data: %s", _mask_token(data))
+        logger.info(
+            "Sending Zalo message through external API with data: %s", _mask_token(data)
+        )
 
         # Bot ID is required to identify the account in the external system.
         bot_id = data.get("bot_id")
         if not bot_id:
-             logger.error("No bot_id provided for message send.")
-             raise ValueError("bot_id is required for messages")
+            logger.error("No bot_id provided for message send.")
+            raise ValueError("bot_id is required for messages")
 
         url = f"{config.ZALO_EXTERNAL_API_BASE}/api/{bot_id}/send"
 
@@ -102,19 +104,21 @@ class ZaloProvider:
             raise
 
 
-
 class WhatsappProvider:
     """Provider for sending messages to WhatsApp via External API."""
 
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Send a text message via External WhatsApp API."""
-        logger.info("Sending WhatsApp message through external API with data: %s", _mask_token(data))
+        logger.info(
+            "Sending WhatsApp message through external API with data: %s",
+            _mask_token(data),
+        )
 
         # Bot ID is required to identify the account in the external system.
         bot_id = data.get("bot_id")
         if not bot_id:
-             logger.error("No bot_id provided for message send.")
-             raise ValueError("bot_id is required for messages")
+            logger.error("No bot_id provided for message send.")
+            raise ValueError("bot_id is required for messages")
 
         url = f"{config.WHATSAPP_EXTERNAL_API_BASE}/api/{bot_id}/send"
 
