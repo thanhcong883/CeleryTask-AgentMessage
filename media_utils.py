@@ -2,7 +2,9 @@ import boto3
 from botocore.exceptions import ClientError
 import config
 import os
+import re
 import time
+import uuid
 import requests
 import logging
 from datetime import datetime
@@ -11,17 +13,50 @@ from typing import Optional, Dict, Any, Tuple
 logger = logging.getLogger(__name__)
 
 
+_SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def safe_filename(name: str) -> str:
+    """Sanitize a filename for safe use in S3 keys and URLs.
+
+    Keeps ASCII alphanumerics, dot, dash, underscore. Everything else
+    (spaces, brackets, unicode, etc.) is collapsed to a single underscore.
+    """
+    if not name:
+        return ""
+    cleaned = _SAFE_FILENAME_RE.sub("_", name)
+    cleaned = re.sub(r"_+", "_", cleaned).strip("_.")
+    return cleaned
+
+
+def build_media_filename(
+    message_type: str, original_name: Optional[str], ext: str
+) -> str:
+    """Build the final stored filename for a media upload.
+
+    - `file` with a known original name: ``<uuid>_<sanitized_original>``.
+    - Everything else: ``<uuid>.<ext>``.
+    """
+    uid = uuid.uuid4().hex
+    if message_type == "file" and original_name:
+        safe = safe_filename(original_name)
+        if safe:
+            if "." not in safe:
+                safe = f"{safe}.{ext}"
+            return f"{uid}_{safe}"
+    return f"{uid}.{ext}"
+
+
 def get_folder_structure(platform_name: str, conversation_id: str) -> str:
     """
-    Generate folder structure: YYYY/MM/DD/platform/conversation_id/HH
+    Generate folder structure: YYYY/MM/DD/platform/conversation_id
     """
     now = datetime.now()
     year = now.strftime("%Y")
     month = now.strftime("%m")
     day = now.strftime("%d")
-    hour = now.strftime("%H")
 
-    return f"{year}/{month}/{day}/{platform_name}/{conversation_id}/{hour}"
+    return f"{year}/{month}/{day}/{platform_name}/{conversation_id}"
 
 
 def download_file_generic(url: str, save_path: str) -> bool:
@@ -84,18 +119,24 @@ def upload_to_s3(local_path: str, s3_key: str) -> Optional[str]:
         logger.error("AWS credentials or bucket name not configured.")
         return None
 
-    s3_client = boto3.client(
-        "s3",
-        aws_access_key_id=config.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY,
-        region_name=config.AWS_REGION,
-    )
+    client_kwargs = {
+        "aws_access_key_id": config.AWS_ACCESS_KEY_ID,
+        "aws_secret_access_key": config.AWS_SECRET_ACCESS_KEY,
+        "region_name": config.AWS_REGION,
+    }
+    if config.AWS_ENDPOINT_URL:
+        client_kwargs["endpoint_url"] = config.AWS_ENDPOINT_URL
+
+    s3_client = boto3.client("s3", **client_kwargs)
 
     try:
         s3_client.upload_file(local_path, config.AWS_BUCKET_NAME, s3_key)
 
-        # Determine the URL format based on region (standard AWS format)
-        if config.AWS_REGION == "us-east-1":
+        if config.AWS_PUBLIC_URL_BASE:
+            url = f"{config.AWS_PUBLIC_URL_BASE.rstrip('/')}/{config.AWS_BUCKET_NAME}/{s3_key}"
+        elif config.AWS_ENDPOINT_URL:
+            url = f"{config.AWS_ENDPOINT_URL.rstrip('/')}/{config.AWS_BUCKET_NAME}/{s3_key}"
+        elif config.AWS_REGION == "us-east-1":
             url = f"https://{config.AWS_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
         else:
             url = f"https://{config.AWS_BUCKET_NAME}.s3.{config.AWS_REGION}.amazonaws.com/{s3_key}"

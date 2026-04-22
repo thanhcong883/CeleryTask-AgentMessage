@@ -89,8 +89,10 @@ PLATFORMS: Dict[str, Dict[str, str]] = {
 STRAPI_UPLOAD: str = f"{STRAPI_API_BASE}/upload"
 STRAPI_UPLOAD_FOLDER: str = f"{STRAPI_API_BASE}/upload/folders"
 
-# AWS S3 Configuration
+# AWS S3 Configuration (supports S3-compatible stores like MinIO via AWS_ENDPOINT_URL)
 AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
 AWS_BUCKET_NAME: Optional[str] = os.getenv("AWS_BUCKET_NAME")
+AWS_ENDPOINT_URL: Optional[str] = os.getenv("AWS_ENDPOINT_URL")
+AWS_PUBLIC_URL_BASE: Optional[str] = os.getenv("AWS_PUBLIC_URL_BASE")

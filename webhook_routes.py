@@ -9,10 +9,13 @@ from media_utils import (
     get_folder_structure,
     download_file_generic,
     download_telegram_file,
+    upload_to_s3,
+    build_media_filename,
 )
-from api_client import create_strapi_folder, upload_to_strapi
+
 import os
 import uuid
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/hook", tags=["Webhooks"])
@@ -57,7 +60,19 @@ async def universal_hook(
         is_group = body.get("isGroup", False)
         msg_type = "group" if is_group else "private"
 
-        content = raw_data.get("content") or body.get("text")
+        # raw_data.content can be a dict for media messages (chat.photo,
+        # share.file, ...). Only treat it as `content` when it is already a
+        # string (plain text messages); for media we start with "" and let
+        # the media block below set it from description/title if present.
+        _raw_content = raw_data.get("content")
+        if isinstance(_raw_content, str):
+            content = _raw_content
+        elif isinstance(body.get("text"), str) and not isinstance(
+            _raw_content, dict
+        ):
+            content = body.get("text")
+        else:
+            content = ""
         sender_id = raw_data.get("uidFrom") or body.get("from")
         name = raw_data.get("dName") or body.get("from")
         conv_id = body.get("threadId") or raw_data.get("idTo")
@@ -67,54 +82,91 @@ async def universal_hook(
         title = body.get("title") or "unknown"
 
         message_type = "text"
-        media_urls = []
+        media_url: Optional[str] = None
         msg_type_zalo = raw_data.get("msgType")
         if msg_type_zalo in ["share.file", "chat.photo", "chat.video", "chat.voice"]:
+            import json
+            from urllib.parse import urlparse
+
             content_data = raw_data.get("content", {})
             if isinstance(content_data, str):
-                import json
-
                 try:
                     content_data = json.loads(content_data)
                 except Exception:
                     pass
 
-            href = content_data.get("href") if isinstance(content_data, dict) else None
-
-            if href:
-                message_type = "media"
-                folder_path = get_folder_structure("Zalo", conv_id)
-                ext = (
-                    content_data.get("params", {}).get("fileExt", "bin")
-                    if isinstance(content_data, dict)
-                    and isinstance(content_data.get("params"), dict)
-                    else "bin"
-                )
-                # If params is a string (like in the payload), try parsing it
-                if isinstance(content_data, dict) and isinstance(
-                    content_data.get("params"), str
-                ):
-                    import json
-
+            params_dict = {}
+            if isinstance(content_data, dict):
+                raw_params = content_data.get("params")
+                if isinstance(raw_params, dict):
+                    params_dict = raw_params
+                elif isinstance(raw_params, str):
                     try:
-                        params_dict = json.loads(content_data.get("params"))
-                        ext = params_dict.get("fileExt", "bin")
+                        params_dict = json.loads(raw_params)
                     except Exception:
-                        pass
+                        params_dict = {}
 
-                filename = f"{uuid.uuid4()}.{ext}"
+            # Prefer HD URL for photo/video, fallback to href
+            download_url = None
+            if isinstance(content_data, dict):
+                download_url = (
+                    params_dict.get("hd")
+                    or content_data.get("href")
+                    or content_data.get("thumb")
+                )
+
+            if download_url:
+                # Caption extraction differs for share.file vs photo/video:
+                #   - share.file: `title` is the filename, `description` is the caption.
+                #   - photo/video/voice: either field carries user-typed caption.
+                original_name: Optional[str] = None
+                if isinstance(content_data, dict):
+                    if msg_type_zalo == "share.file":
+                        caption = content_data.get("description") or ""
+                        original_name = (
+                            params_dict.get("fileName")
+                            or content_data.get("title")
+                            or None
+                        )
+                    else:
+                        caption = (
+                            content_data.get("description")
+                            or content_data.get("title")
+                            or ""
+                        )
+                    caption = caption.strip() if isinstance(caption, str) else ""
+                    if caption:
+                        content = caption
+
+                message_type = "image" if msg_type_zalo == "chat.photo" else "file"
+                folder_path = get_folder_structure("Zalo", conv_id)
+
+                # Determine extension: fileExt (share.file) > URL suffix > msgType default
+                ext = params_dict.get("fileExt") if params_dict else None
+                if not ext:
+                    url_path = urlparse(download_url).path
+                    if "." in url_path.rsplit("/", 1)[-1]:
+                        ext = url_path.rsplit(".", 1)[-1].lower()
+                if not ext:
+                    ext = {
+                        "chat.photo": "jpg",
+                        "chat.video": "mp4",
+                        "chat.voice": "m4a",
+                    }.get(msg_type_zalo, "bin")
+
+                filename = build_media_filename(message_type, original_name, ext)
                 local_path = os.path.join("/tmp/downloads", folder_path, filename)
 
-                if download_file_generic(href, local_path):
+                if download_file_generic(download_url, local_path):
                     s3_key = f"{folder_path}/{filename}"
                     s3_url = upload_to_s3(local_path, s3_key)
                     if s3_url:
-                        media_urls.append(s3_url)
+                        media_url = s3_url
 
         msg_data = {
             "platform_name": "Zalo",
             "message_type": message_type,
-            "media_urls": media_urls,
+            "media_url": media_url,
             "content": content,
             "platform_user_id": sender_id,
             "platform_conv_id": conv_id,
@@ -203,38 +255,72 @@ async def universal_hook(
         )
 
         message_type = "text"
-        media_urls = []
-        wa_msg = data_field.get("message")
-        wa_msg = wa_msg if isinstance(wa_msg, dict) else {}
+        media_url: Optional[str] = None
 
-        media_url = None
-        ext = "bin"
-        if "documentMessage" in wa_msg:
-            media_url = wa_msg["documentMessage"].get("url")
-            ext = wa_msg["documentMessage"].get("fileName", "doc").split(".")[-1]
-        elif "imageMessage" in wa_msg:
-            media_url = wa_msg["imageMessage"].get("url")
-            ext = "jpg"
-        elif "videoMessage" in wa_msg:
-            media_url = wa_msg["videoMessage"].get("url")
-            ext = "mp4"
+        # Baileys service decrypts E2E media and exposes plaintext via data.media.url.
+        # We just fetch it over plain HTTP, same as Zalo/Telegram.
+        media_info = data_field.get("media")
+        media_info = media_info if isinstance(media_info, dict) else {}
+        download_url = media_info.get("url")
 
-        if media_url:
-            message_type = "media"
+        if download_url:
+            _mime_ext_map = {
+                "application/pdf": "pdf",
+                "application/zip": "zip",
+                "image/jpeg": "jpg",
+                "image/png": "png",
+                "image/webp": "webp",
+                "image/gif": "gif",
+                "video/mp4": "mp4",
+                "video/3gpp": "3gp",
+                "audio/ogg": "ogg",
+                "audio/mpeg": "mp3",
+                "audio/mp4": "m4a",
+                "audio/aac": "aac",
+            }
+
+            # Extension: original filename > mimetype map > fallback
+            ext = None
+            fname = media_info.get("filename") or ""
+            if "." in fname:
+                ext = fname.rsplit(".", 1)[-1].lower()
+            if not ext:
+                ext = _mime_ext_map.get(
+                    media_info.get("mimetype"),
+                    {
+                        "image": "jpg",
+                        "video": "mp4",
+                        "audio": "ogg",
+                        "sticker": "webp",
+                    }.get(media_info.get("type"), "bin"),
+                )
+
+            m_kind = (media_info.get("type") or "").lower()
+            m_mime = (media_info.get("mimetype") or "").lower()
+            if m_kind in ("image", "sticker") or m_mime.startswith("image/"):
+                message_type = "image"
+            else:
+                message_type = "file"
             folder_path = get_folder_structure("Whatsapp", conv_id)
-            filename = f"{uuid.uuid4()}.{ext}"
+            filename = build_media_filename(
+                message_type, media_info.get("filename"), ext
+            )
             local_path = os.path.join("/tmp/downloads", folder_path, filename)
 
-            if download_file_generic(media_url, local_path):
+            if download_file_generic(download_url, local_path):
                 s3_key = f"{folder_path}/{filename}"
                 s3_url = upload_to_s3(local_path, s3_key)
                 if s3_url:
-                    media_urls.append(s3_url)
+                    media_url = s3_url
+            else:
+                logger.warning(
+                    f"Failed to download WhatsApp media for message {message_id} from {download_url}"
+                )
 
         msg_data = {
             "platform_name": "Whatsapp",
             "message_type": message_type,
-            "media_urls": media_urls,
+            "media_url": media_url,
             "content": content_text,
             "platform_user_id": sender_id,
             "platform_conv_id": conv_id,
@@ -280,40 +366,52 @@ async def universal_hook(
         title = chat.get("title")
 
         message_type = "text"
-        media_urls = []
+        media_url: Optional[str] = None
         file_id = None
         ext = "bin"
+        media_kind: str = ""  # "image" or "file"
+        original_name: Optional[str] = None
 
         if "photo" in message and message["photo"]:
             # Get largest photo
             file_id = message["photo"][-1]["file_id"]
             ext = "jpg"
+            media_kind = "image"
         elif "document" in message:
-            file_id = message["document"]["file_id"]
-            ext = message["document"].get("file_name", "doc").split(".")[-1]
+            doc = message["document"]
+            file_id = doc["file_id"]
+            original_name = doc.get("file_name")
+            ext = (
+                original_name.split(".")[-1] if original_name and "." in original_name else "doc"
+            )
+            doc_mime = (doc.get("mime_type") or "").lower()
+            media_kind = "image" if doc_mime.startswith("image/") else "file"
         elif "video" in message:
             file_id = message["video"]["file_id"]
             ext = "mp4"
+            media_kind = "file"
+            original_name = message["video"].get("file_name")
         elif "voice" in message:
             file_id = message["voice"]["file_id"]
             ext = "ogg"
+            media_kind = "file"
 
         if file_id and token:
-            message_type = "media"
+            message_type = media_kind or "file"
             folder_path = get_folder_structure("Telegram", str(chat.get("id")))
-            filename = f"{uuid.uuid4()}.{ext}"
+            filename = build_media_filename(message_type, original_name, ext)
             local_path = os.path.join("/tmp/downloads", folder_path, filename)
 
             if download_telegram_file(file_id, token, local_path):
                 s3_key = f"{folder_path}/{filename}"
                 s3_url = upload_to_s3(local_path, s3_key)
                 if s3_url:
-                    media_urls.append(s3_url)
+                    media_url = s3_url
 
         msg_data = {
             "platform_name": "Telegram",
             "message_type": message_type,
-            "media_urls": media_urls,
+            "media_url": media_url,
             "content": message.get("text", message.get("caption", "")),
             "platform_user_id": str(from_user.get("id")),
             "platform_conv_id": str(chat.get("id")),

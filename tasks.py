@@ -146,6 +146,11 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     title = data.get("title", "")
     token = data.get("token")
 
+    media_hint = {
+        "image": " (có kèm ảnh)",
+        "file": " (có kèm file)",
+    }.get(data.get("message_type"), "")
+
     # Notify each admin conversation
     bot_sent_to = data.get("bot_sent_to", [])
     if bot_sent_to:
@@ -164,7 +169,10 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 "platform_conv_id": conv_info.get("platform_conv_id"),
                 "platform_name": "Telegram",
                 "token": os.environ.get("TELEGRAM_TOKEN_SUPPORT"),
-                "content": f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, nhóm {title}",
+                "content": (
+                    f"Có tin nhắn mới cần trợ giúp từ nền tảng {platform_name}, "
+                    f"nhóm {title}{media_hint}"
+                ),
             }
             logger.info("Admin payload: %s", admin_payload)
             send_message.apply_async(
@@ -340,6 +348,8 @@ def _schedule_agent_check(
         "title": conversation_info.get("title"),
         "bot_sent_to": conversation_info.get("bot_sent_to"),
         "bot_id": bot_id,
+        "media_url": data.get("media_url"),
+        "message_type": data.get("message_type", "text"),
     }
 
     check_agent_answer.apply_async(

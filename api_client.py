@@ -452,6 +452,12 @@ def find_user_role(
     )
 
 
+_MESSAGE_TYPE_MARKER = {
+    "image": "[image]",
+    "file": "[file]",
+}
+
+
 def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Build history chat format for agent payload.
@@ -460,36 +466,24 @@ def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         history: List of message history
 
     Returns:
-        Formatted history list
+        Formatted history list. Non-text messages get a `[image]` or `[file]`
+        marker prepended to content so the agent is aware of attachments
+        without needing the raw URL.
     """
-    return [
-        {
-            "role": msg.get("sender_type"),
-            "content": msg.get("content"),
-            "datetime": msg.get("datetime"),
-        }
-        for msg in history
-    ]
+    result: List[Dict[str, Any]] = []
+    for msg in history:
+        content = msg.get("content") or ""
+        message_type = msg.get("message_type")
 
-    url = config.STRAPI_UPLOAD
-    headers = {"Authorization": config.STRAPI_TOKEN}
+        marker = _MESSAGE_TYPE_MARKER.get(message_type)
+        if marker:
+            content = f"{marker} {content}".strip()
 
-    try:
-        with open(file_path, "rb") as f:
-            files = {"files": f}
-            data = {}
-            if folder_id is not None:
-                data["fileInfo"] = f'{{"folder": {folder_id}}}'
-
-            response = requests.post(
-                url, files=files, data=data, headers=headers, timeout=60
-            )
-            response.raise_for_status()
-
-            resp_data = response.json()
-            if resp_data and isinstance(resp_data, list):
-                return resp_data[0].get("id")
-            return None
-    except Exception as e:
-        logger.error(f"Failed to upload to Strapi: {e}")
-        return None
+        result.append(
+            {
+                "role": msg.get("sender_type"),
+                "content": content,
+                "datetime": msg.get("datetime"),
+            }
+        )
+    return result
