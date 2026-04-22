@@ -2,21 +2,19 @@ import requests
 import pytest
 import time
 
-def test_zalo_bot_lifecycle(server_process, worker_process, tunnel_url, test_env, request_with_retry):
+
+def test_zalo_bot_lifecycle(
+    server_process, worker_process, tunnel_url, test_env, request_with_retry
+):
     """
     Test the lifecycle of a Zalo bot: Create -> Status -> QR Code -> Delete.
     """
     BASE_URL = f"{tunnel_url}/api"
     bot_id = "pytest_zalo_bot"
-    
+
     try:
         # 1. Create Bot
-        create_payload = {
-            "botId": bot_id,
-            "options": {
-                "platform": "zalo"
-            }
-        }
+        create_payload = {"botId": bot_id, "options": {"platform": "zalo"}}
         response = request_with_retry("post", f"{BASE_URL}/bots", json=create_payload)
         print(f"\n>>> Create Bot Response: {response.status_code} - {response.text}")
         assert response.status_code == 200
@@ -42,7 +40,7 @@ def test_zalo_bot_lifecycle(server_process, worker_process, tunnel_url, test_env
         # 4. Delete Bot - Always run cleanup
         response = request_with_retry("delete", f"{BASE_URL}/bots/{bot_id}")
         print(f">>> Cleanup Delete Bot Response: {response.status_code}")
-        
+
         if response.status_code == 200:
             assert response.json()["status"] == "ok"
             # Verify it's gone

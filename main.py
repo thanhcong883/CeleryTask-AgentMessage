@@ -5,7 +5,12 @@ from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse
 import config
 import httpx
 import base64
-from database import redis_client, get_system_config, update_system_config, CONFIG_REDIS_KEY
+from database import (
+    redis_client,
+    get_system_config,
+    update_system_config,
+    CONFIG_REDIS_KEY,
+)
 from zalo_service import sync_zalo_webhook
 from whatsapp_service import sync_whatsapp_webhook
 from telegram_service import sync_telegram_webhook
@@ -32,6 +37,7 @@ app = FastAPI(
 app.include_router(bot_router, dependencies=[Depends(security.verify_secret_token)])
 app.include_router(webhook_router)
 app.include_router(message_router, dependencies=[Depends(security.verify_secret_token)])
+
 
 def sync_all_bots():
     """Syncs webhook configuration for all bots in Redis."""
@@ -64,6 +70,7 @@ def sync_all_bots():
     except Exception as e:
         logger.error(f"Error during bot sync: {e}")
 
+
 @app.on_event("startup")
 async def startup_event():
     """Initializes existing bot configurations from Redis on startup."""
@@ -83,17 +90,26 @@ async def startup_event():
 
     sync_all_bots()
 
-@app.get("/api/config", tags=["General"], dependencies=[Depends(security.verify_secret_token)])
+
+@app.get(
+    "/api/config",
+    tags=["General"],
+    dependencies=[Depends(security.verify_secret_token)],
+)
 async def get_config():
     """Returns the current runtime configuration."""
     return {"status": "ok", "config": get_system_config()}
 
-@app.post("/api/config", tags=["System"], dependencies=[Depends(security.verify_secret_token)])
+
+@app.post(
+    "/api/config", tags=["System"], dependencies=[Depends(security.verify_secret_token)]
+)
 async def update_runtime_config(new_config: dict):
     """Updates the runtime configuration (e.g., BASE_URL) and re-syncs all bots."""
     update_system_config(new_config)
     sync_all_bots()
     return {"status": "ok", "config": get_system_config()}
+
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_get():
@@ -122,6 +138,7 @@ async def login_get():
     </html>
     """
 
+
 @app.post("/login")
 async def login_post(username: str = Form(...), password: str = Form(...)):
     if username == config.FLOWER_USER and password == config.FLOWER_PASSWORD:
@@ -132,7 +149,8 @@ async def login_post(username: str = Form(...), password: str = Form(...)):
         response.set_cookie(key="flower_auth", value=base64_auth, httponly=True)
         return response
     else:
-        return HTMLResponse(content="""
+        return HTMLResponse(
+            content="""
         <html>
             <head>
                 <title>Flower Login</title>
@@ -156,13 +174,17 @@ async def login_post(username: str = Form(...), password: str = Form(...)):
                 </form>
             </body>
         </html>
-        """, status_code=401)
+        """,
+            status_code=401,
+        )
+
 
 @app.get("/logout")
 async def logout():
     response = RedirectResponse(url="/login")
     response.delete_cookie("flower_auth")
     return response
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -191,11 +213,15 @@ async def global_exception_handler(request: Request, exc: Exception):
                 </div>
             </body>
         </html>
-        """
+        """,
     )
 
+
 # Catch-all proxy for Flower
-@app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
+@app.api_route(
+    "/{path_name:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
+)
 async def flower_proxy(request: Request, path_name: str):
     """Proxies all remaining requests to Flower with authentication."""
     # Retrieve the auth token from the cookie
@@ -232,7 +258,7 @@ async def flower_proxy(request: Request, path_name: str):
             params=request.query_params,
             content=content,
             headers=headers,
-            timeout=None
+            timeout=None,
         )
 
         try:
@@ -245,7 +271,8 @@ async def flower_proxy(request: Request, path_name: str):
         # Filter out problematic headers
         excluded_headers = ["content-length"]
         response_headers = {
-            k: v for k, v in response.headers.items()
+            k: v
+            for k, v in response.headers.items()
             if k.lower() not in excluded_headers
         }
 
@@ -253,9 +280,11 @@ async def flower_proxy(request: Request, path_name: str):
             response.aiter_bytes(),
             status_code=response.status_code,
             headers=response_headers,
-            background=None
+            background=None,
         )
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
