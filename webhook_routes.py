@@ -214,11 +214,19 @@ async def universal_hook(
         ext_text = wa_msg.get("extendedTextMessage") or {}
         img = wa_msg.get("imageMessage") or {}
         vid = wa_msg.get("videoMessage") or {}
+        doc = wa_msg.get("documentMessage") or {}
+        # Newer WhatsApp clients wrap a document + caption inside
+        # `documentWithCaptionMessage`, whose inner `message.documentMessage`
+        # carries the caption (and is the actual decryptable document).
+        doc_wrap = (wa_msg.get("documentWithCaptionMessage") or {}).get("message") or {}
+        doc_wrap_doc = doc_wrap.get("documentMessage") or {}
         content_text = (
             wa_msg.get("conversation")
             or ext_text.get("text")
             or img.get("caption")
             or vid.get("caption")
+            or doc.get("caption")
+            or doc_wrap_doc.get("caption")
             or raw_data.get("content")
             or body.get("text")
             or data_field.get("text")
