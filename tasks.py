@@ -4,6 +4,7 @@ Celery tasks for message processing and agent communication.
 
 import hashlib
 import logging
+import json
 from typing import Any, Callable, Optional, Dict, List, Protocol
 import os
 from celery import Celery
@@ -50,6 +51,38 @@ def _mask_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe_data
 
 
+def _get_cached_conversation_info(conversation_id: str) -> Optional[Dict[str, Any]]:
+    cache_key = f"conv_info:{conversation_id}"
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        try:
+            return json.loads(str(cached_data))
+        except json.JSONDecodeError:
+            pass
+
+    info = get_conversation_info(conversation_id)
+    if info:
+        redis_client.setex(cache_key, 300, json.dumps(info))
+    return info
+
+
+def _get_cached_conversation_members(
+    conversation_id: str,
+) -> Optional[List[Dict[str, Any]]]:
+    cache_key = f"conv_members:{conversation_id}"
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        try:
+            return json.loads(str(cached_data))
+        except json.JSONDecodeError:
+            pass
+
+    members = get_conversation_members(conversation_id)
+    if members:
+        redis_client.setex(cache_key, 300, json.dumps(members))
+    return members
+
+
 def handle_send_message(
     data: Dict[str, Any],
     callback: Optional[Callable[[str, Dict[str, Any], Any], None]] = None,
@@ -84,13 +117,13 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     conversation_id = data.get("conversation")
     message_id = data.get("message_id")
 
-    # DEBOUNCE CHECK:
-    # Only proceed if this is still the latest message from the user.
-    latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
-    if latest_msg_id and str(latest_msg_id) != str(message_id):
+    # DEBOUNCE CHECK (Level 2):
+    # Only proceed if this is still the latest valid question from the user.
+    latest_question_id = redis_client.get(f"latest_question_message:{conversation_id}")
+    if latest_question_id and str(latest_question_id) != str(message_id):
         logger.info(
-            "Newer message (%s) exists for conversation %s, skipping agent check for %s",
-            latest_msg_id,
+            "Newer question (%s) exists for conversation %s, skipping agent check for %s",
+            latest_question_id,
             conversation_id,
             message_id,
         )
@@ -155,7 +188,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     bot_sent_to = data.get("bot_sent_to", [])
     if bot_sent_to:
         for conversation_id in bot_sent_to:
-            conv_info = get_conversation_info(conversation_id)
+            conv_info = _get_cached_conversation_info(conversation_id)
             if not conv_info:
                 logger.warning(
                     "Could not retrieve info for admin conversation %s", conversation_id
@@ -250,7 +283,7 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # Get conversation info
-    conversation_info = get_conversation_info(conversation_id)
+    conversation_info = _get_cached_conversation_info(conversation_id)
     if not conversation_info:
         logger.warning("Could not retrieve conversation info for %s", conversation_id)
         return
@@ -289,23 +322,75 @@ def process_message(data: Dict[str, Any]) -> None:
 
     # NEW DEBOUNCE LOGIC:
     redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
-    logger.info("Set latest user message for %s to %s", conversation_id, message_id)
-    # Check if the question needs agent processing
-    _schedule_agent_check(data, conversation_id, message_id, conversation_info)
+    logger.info(
+        "Set latest user message for %s to %s. Scheduling task_check_question.",
+        conversation_id,
+        message_id,
+    )
+
+    # Schedule task_check_question after 60 seconds (1 minute window)
+    task_check_question.apply_async(
+        args=(data, str(conversation_id), str(message_id), conversation_info),
+        countdown=60,
+    )
 
 
-def _schedule_agent_check(
+@app.task(name="tasks.task_check_question", queue="celery_receive_message")
+def task_check_question(
     data: Dict[str, Any],
     conversation_id: str,
     message_id: str,
     conversation_info: Dict[str, Any],
 ) -> None:
-    """Schedule agent check task if the question is valid."""
-    content = data.get("content")
-    if not content:
+    """Task to evaluate concatenated recent messages after a 1-minute debounce window."""
+
+    # 1. Check debounce
+    latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
+    if latest_msg_id and str(latest_msg_id) != str(message_id):
+        logger.info(
+            "Newer message (%s) arrived for conversation %s, skipping check for %s",
+            latest_msg_id,
+            conversation_id,
+            message_id,
+        )
         return
 
-    check_response = check_question(str(content))
+    # 2. Get history
+    history = get_message_history(str(conversation_id), str(message_id))
+    if not history:
+        logger.warning("No message history found for %s", conversation_id)
+        return
+
+    # 3. Gom tin nhắn (Concatenate messages)
+    customer_messages = []
+    # History is from newest to oldest. We scan until we hit a non-customer message or reach 5 msgs
+    for msg in history:
+        if msg.get("sender_type") != "customer":
+            break
+
+        content_msg = msg.get("content")
+        if content_msg:
+            customer_messages.append(str(content_msg))
+
+        if len(customer_messages) >= 5:
+            break
+
+    if not customer_messages:
+        logger.info("No customer messages found to check for %s", conversation_id)
+        return
+
+    # Reverse to chronological order (oldest to newest)
+    customer_messages.reverse()
+    concatenated_content = "\n".join(customer_messages)
+
+    logger.info(
+        "Checking question for conversation %s: %s",
+        conversation_id,
+        concatenated_content,
+    )
+
+    # 4. Check if question
+    check_response = check_question(concatenated_content)
 
     if not check_response:
         return
@@ -317,9 +402,17 @@ def _schedule_agent_check(
         logger.error("Failed to parse response from check_question")
         return
 
-    time_to_use_agent = conversation_info.get("time_to_use_agent")
-    if time_to_use_agent is None:
-        time_to_use_agent = 0
+    # 5. Question detected: Update latest_question_message and schedule agent check
+    redis_client.setex(
+        f"latest_question_message:{conversation_id}", 3600, str(message_id)
+    )
+    logger.info(
+        "Valid question detected for %s. Set latest_question_message to %s",
+        conversation_id,
+        message_id,
+    )
+
+    time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
 
     bot_id = (
         (conversation_info.get("account") or {}).get("account_id")
@@ -337,7 +430,7 @@ def _schedule_agent_check(
         "conversation": conversation_id,
         "message_id": message_id,
         "time_to_use_agent": time_to_use_agent,
-        "content": data.get("content"),
+        "content": concatenated_content,  # passing the concatenated content
         "type": conversation_info.get("type"),
         "platform_conv_id": data.get("platform_conv_id"),
         "group_id": data.get("platform_conv_id"),
