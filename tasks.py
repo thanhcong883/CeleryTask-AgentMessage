@@ -321,6 +321,15 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # NEW DEBOUNCE LOGIC:
+    # 1. Capture the FIRST message ID of this 1-minute window to fetch history properly
+    first_msg_key = f"first_user_message:{conversation_id}"
+    if not redis_client.get(first_msg_key):
+        redis_client.setex(first_msg_key, 3600, str(message_id))
+        logger.info(
+            "Set FIRST user message for window %s to %s", conversation_id, message_id
+        )
+
+    # 2. Update the LATEST message ID to handle debounce override
     redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
     logger.info(
         "Set latest user message for %s to %s. Scheduling task_check_question.",
@@ -355,17 +364,34 @@ def task_check_question(
         )
         return
 
-    # 2. Get history
-    history = get_message_history(str(conversation_id), str(message_id))
+    # 2. Get history using the FIRST message ID of the window
+    first_msg_key = f"first_user_message:{conversation_id}"
+    first_msg_id_bytes = redis_client.get(first_msg_key)
+    first_msg_id = str(first_msg_id_bytes) if first_msg_id_bytes else str(message_id)
+
+    # Delete the key so the next batch can start fresh
+    redis_client.delete(first_msg_key)
+
+    history = get_message_history(str(conversation_id), str(first_msg_id))
     if not history:
-        logger.warning("No message history found for %s", conversation_id)
+        logger.warning(
+            "No message history found for %s starting at %s",
+            conversation_id,
+            first_msg_id,
+        )
         return
 
     # 3. Gom tin nhắn (Concatenate messages)
     customer_messages = []
-    # History is from newest to oldest. We scan until we hit a non-customer message or reach 5 msgs
+
+    # Depending on the API, if passing 1676 returns [1676, 1677, 1678], it's from oldest to newest.
+    # If it returns [1678, 1677, 1676], it's newest to oldest.
+    # Usually we want chronological order for the AI: "Help \n Giúp tôi với \n Hihi"
+
+    # Let's ensure we process them correctly. If the API returns them chronologically (oldest first):
     for msg in history:
         if msg.get("sender_type") != "customer":
+            # If an admin or bot replied in the middle, we stop collecting.
             break
 
         content_msg = msg.get("content")
@@ -379,8 +405,9 @@ def task_check_question(
         logger.info("No customer messages found to check for %s", conversation_id)
         return
 
-    # Reverse to chronological order (oldest to newest)
-    customer_messages.reverse()
+    # If the history was newest-to-oldest, we'd reverse it. But given the previous log,
+    # if passing 1676 returns 1677, 1678, it's chronological (oldest to newest).
+    # So we don't need to reverse.
     concatenated_content = "\n".join(customer_messages)
 
     logger.info(
