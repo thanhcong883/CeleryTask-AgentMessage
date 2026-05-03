@@ -172,7 +172,7 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     redis_client.setex(f"bot_processing:{conversation_id}", 60, "1")
 
     logger.info(
-        "Calling N8N_AGENT_WEBHOOK for conversation %s with msg %s",
+        "Calling LLM_AGENT_API for conversation %s with msg %s",
         conversation_id,
         message_id,
     )
@@ -191,7 +191,7 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     try:
         response_data = agent_response.json()
         logger.info(
-            "N8N_AGENT_WEBHOOK responded successfully for %s: %s",
+            "LLM_AGENT_API responded successfully for %s: %s",
             conversation_id,
             response_data,
         )
