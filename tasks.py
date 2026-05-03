@@ -56,13 +56,21 @@ def _get_cached_conversation_info(conversation_id: str) -> Optional[Dict[str, An
     cached_data = redis_client.get(cache_key)
     if cached_data:
         try:
+            logger.info("Cache hit for conversation info %s", conversation_id)
             return json.loads(str(cached_data))
         except json.JSONDecodeError:
+            logger.error("JSON decode error for conversation info %s", conversation_id)
             pass
 
+    logger.info(
+        "Cache miss for conversation info %s. Fetching from API.", conversation_id
+    )
     info = get_conversation_info(conversation_id)
     if info:
         redis_client.setex(cache_key, 300, json.dumps(info))
+        logger.info(
+            "Successfully fetched and cached conversation info %s", conversation_id
+        )
     return info
 
 
@@ -73,13 +81,23 @@ def _get_cached_conversation_members(
     cached_data = redis_client.get(cache_key)
     if cached_data:
         try:
+            logger.info("Cache hit for conversation members %s", conversation_id)
             return json.loads(str(cached_data))
         except json.JSONDecodeError:
+            logger.error(
+                "JSON decode error for conversation members %s", conversation_id
+            )
             pass
 
+    logger.info(
+        "Cache miss for conversation members %s. Fetching from API.", conversation_id
+    )
     members = get_conversation_members(conversation_id)
     if members:
         redis_client.setex(cache_key, 300, json.dumps(members))
+        logger.info(
+            "Successfully fetched and cached conversation members %s", conversation_id
+        )
     return members
 
 
@@ -150,21 +168,38 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     }
 
     # Set processing lock
+    logger.info("Acquiring bot_processing lock for conversation %s", conversation_id)
     redis_client.setex(f"bot_processing:{conversation_id}", 60, "1")
 
+    logger.info(
+        "Calling N8N_AGENT_WEBHOOK for conversation %s with msg %s",
+        conversation_id,
+        message_id,
+    )
     agent_response = call_agent_webhook(agent_payload)
 
     # Release processing lock
+    logger.info("Releasing bot_processing lock for conversation %s", conversation_id)
     redis_client.delete(f"bot_processing:{conversation_id}")
 
     if not agent_response:
-        logger.error("Agent webhook call failed")
+        logger.error(
+            "Agent webhook call failed entirely for conversation %s", conversation_id
+        )
         return
 
     try:
         response_data = agent_response.json()
+        logger.info(
+            "N8N_AGENT_WEBHOOK responded successfully for %s: %s",
+            conversation_id,
+            response_data,
+        )
     except ValueError:
-        logger.error("Failed to parse agent response as JSON")
+        logger.error(
+            "Failed to parse agent response as JSON for conversation %s",
+            conversation_id,
+        )
         return
 
     # If agent cannot answer, notify admins
@@ -259,6 +294,9 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # Case 4: Customer message -> Sync and proceed to Agent logic
+    logger.info(
+        "Syncing customer message to Strapi for msg_id: %s", data.get("platform_msg_id")
+    )
     sync_response = sync_message(data)
     if not sync_response:
         return
@@ -328,6 +366,12 @@ def process_message(data: Dict[str, Any]) -> None:
         logger.info(
             "Set FIRST user message for window %s to %s", conversation_id, message_id
         )
+    else:
+        logger.info(
+            "FIRST user message for window %s already exists (is %s), continuing debounce...",
+            conversation_id,
+            redis_client.get(first_msg_key),
+        )
 
     # 2. Update the LATEST message ID to handle debounce override
     redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
@@ -381,6 +425,13 @@ def task_check_question(
         )
         return
 
+    logger.info(
+        "Fetched %d messages from history for conversation %s starting at %s",
+        len(history),
+        conversation_id,
+        first_msg_id,
+    )
+
     # 3. Gom tin nhắn (Concatenate messages)
     customer_messages = []
 
@@ -420,10 +471,17 @@ def task_check_question(
     check_response = check_question(concatenated_content)
 
     if not check_response:
+        logger.error("check_question API returned no response for %s", conversation_id)
         return
 
     try:
-        if check_response.json().get("output") != "true":
+        is_question = check_response.json().get("output")
+        logger.info("AI check_question result for %s: %s", conversation_id, is_question)
+        if is_question != "true":
+            logger.info(
+                "Message evaluated as NOT a question. Aborting agent check for %s",
+                conversation_id,
+            )
             return
     except ValueError:
         logger.error("Failed to parse response from check_question")
