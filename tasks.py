@@ -4,6 +4,7 @@ Celery tasks for message processing and agent communication.
 
 import hashlib
 import logging
+import json
 from typing import Any, Callable, Optional, Dict, List, Protocol
 import os
 from celery import Celery
@@ -50,6 +51,56 @@ def _mask_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe_data
 
 
+def _get_cached_conversation_info(conversation_id: str) -> Optional[Dict[str, Any]]:
+    cache_key = f"conv_info:{conversation_id}"
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        try:
+            logger.info("Cache hit for conversation info %s", conversation_id)
+            return json.loads(str(cached_data))
+        except json.JSONDecodeError:
+            logger.error("JSON decode error for conversation info %s", conversation_id)
+            pass
+
+    logger.info(
+        "Cache miss for conversation info %s. Fetching from API.", conversation_id
+    )
+    info = get_conversation_info(conversation_id)
+    if info:
+        redis_client.setex(cache_key, 300, json.dumps(info))
+        logger.info(
+            "Successfully fetched and cached conversation info %s", conversation_id
+        )
+    return info
+
+
+def _get_cached_conversation_members(
+    conversation_id: str,
+) -> Optional[List[Dict[str, Any]]]:
+    cache_key = f"conv_members:{conversation_id}"
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        try:
+            logger.info("Cache hit for conversation members %s", conversation_id)
+            return json.loads(str(cached_data))
+        except json.JSONDecodeError:
+            logger.error(
+                "JSON decode error for conversation members %s", conversation_id
+            )
+            pass
+
+    logger.info(
+        "Cache miss for conversation members %s. Fetching from API.", conversation_id
+    )
+    members = get_conversation_members(conversation_id)
+    if members:
+        redis_client.setex(cache_key, 300, json.dumps(members))
+        logger.info(
+            "Successfully fetched and cached conversation members %s", conversation_id
+        )
+    return members
+
+
 def handle_send_message(
     data: Dict[str, Any],
     callback: Optional[Callable[[str, Dict[str, Any], Any], None]] = None,
@@ -84,13 +135,13 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     conversation_id = data.get("conversation")
     message_id = data.get("message_id")
 
-    # DEBOUNCE CHECK:
-    # Only proceed if this is still the latest message from the user.
-    latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
-    if latest_msg_id and str(latest_msg_id) != str(message_id):
+    # DEBOUNCE CHECK (Level 2):
+    # Only proceed if this is still the latest valid question from the user.
+    latest_question_id = redis_client.get(f"latest_question_message:{conversation_id}")
+    if latest_question_id and str(latest_question_id) != str(message_id):
         logger.info(
-            "Newer message (%s) exists for conversation %s, skipping agent check for %s",
-            latest_msg_id,
+            "Newer question (%s) exists for conversation %s, skipping agent check for %s",
+            latest_question_id,
             conversation_id,
             message_id,
         )
@@ -117,21 +168,38 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     }
 
     # Set processing lock
+    logger.info("Acquiring bot_processing lock for conversation %s", conversation_id)
     redis_client.setex(f"bot_processing:{conversation_id}", 60, "1")
 
+    logger.info(
+        "Calling LLM_AGENT_API for conversation %s with msg %s",
+        conversation_id,
+        message_id,
+    )
     agent_response = call_agent_webhook(agent_payload)
 
     # Release processing lock
+    logger.info("Releasing bot_processing lock for conversation %s", conversation_id)
     redis_client.delete(f"bot_processing:{conversation_id}")
 
     if not agent_response:
-        logger.error("Agent webhook call failed")
+        logger.error(
+            "Agent webhook call failed entirely for conversation %s", conversation_id
+        )
         return
 
     try:
         response_data = agent_response.json()
+        logger.info(
+            "LLM_AGENT_API responded successfully for %s: %s",
+            conversation_id,
+            response_data,
+        )
     except ValueError:
-        logger.error("Failed to parse agent response as JSON")
+        logger.error(
+            "Failed to parse agent response as JSON for conversation %s",
+            conversation_id,
+        )
         return
 
     # If agent cannot answer, notify admins
@@ -155,7 +223,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
     bot_sent_to = data.get("bot_sent_to", [])
     if bot_sent_to:
         for conversation_id in bot_sent_to:
-            conv_info = get_conversation_info(conversation_id)
+            conv_info = _get_cached_conversation_info(conversation_id)
             if not conv_info:
                 logger.warning(
                     "Could not retrieve info for admin conversation %s", conversation_id
@@ -226,6 +294,9 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # Case 4: Customer message -> Sync and proceed to Agent logic
+    logger.info(
+        "Syncing customer message to Strapi for msg_id: %s", data.get("platform_msg_id")
+    )
     sync_response = sync_message(data)
     if not sync_response:
         return
@@ -250,7 +321,7 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # Get conversation info
-    conversation_info = get_conversation_info(conversation_id)
+    conversation_info = _get_cached_conversation_info(conversation_id)
     if not conversation_info:
         logger.warning("Could not retrieve conversation info for %s", conversation_id)
         return
@@ -288,38 +359,145 @@ def process_message(data: Dict[str, Any]) -> None:
         return
 
     # NEW DEBOUNCE LOGIC:
+    # 1. Capture the FIRST message ID of this 1-minute window to fetch history properly
+    first_msg_key = f"first_user_message:{conversation_id}"
+    if not redis_client.get(first_msg_key):
+        redis_client.setex(first_msg_key, 3600, str(message_id))
+        logger.info(
+            "Set FIRST user message for window %s to %s", conversation_id, message_id
+        )
+    else:
+        logger.info(
+            "FIRST user message for window %s already exists (is %s), continuing debounce...",
+            conversation_id,
+            redis_client.get(first_msg_key),
+        )
+
+    # 2. Update the LATEST message ID to handle debounce override
     redis_client.setex(f"latest_user_message:{conversation_id}", 3600, str(message_id))
-    logger.info("Set latest user message for %s to %s", conversation_id, message_id)
-    # Check if the question needs agent processing
-    _schedule_agent_check(data, conversation_id, message_id, conversation_info)
+    logger.info(
+        "Set latest user message for %s to %s. Scheduling task_check_question.",
+        conversation_id,
+        message_id,
+    )
+
+    # Schedule task_check_question after 60 seconds (1 minute window)
+    task_check_question.apply_async(
+        args=(data, str(conversation_id), str(message_id), conversation_info),
+        countdown=60,
+    )
 
 
-def _schedule_agent_check(
+@app.task(name="tasks.task_check_question", queue="celery_receive_message")
+def task_check_question(
     data: Dict[str, Any],
     conversation_id: str,
     message_id: str,
     conversation_info: Dict[str, Any],
 ) -> None:
-    """Schedule agent check task if the question is valid."""
-    content = data.get("content")
-    if not content:
+    """Task to evaluate concatenated recent messages after a 1-minute debounce window."""
+
+    # 1. Check debounce
+    latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
+    if latest_msg_id and str(latest_msg_id) != str(message_id):
+        logger.info(
+            "Newer message (%s) arrived for conversation %s, skipping check for %s",
+            latest_msg_id,
+            conversation_id,
+            message_id,
+        )
         return
 
-    check_response = check_question(str(content))
+    # 2. Get history using the FIRST message ID of the window
+    first_msg_key = f"first_user_message:{conversation_id}"
+    first_msg_id_bytes = redis_client.get(first_msg_key)
+    first_msg_id = str(first_msg_id_bytes) if first_msg_id_bytes else str(message_id)
+
+    # Delete the key so the next batch can start fresh
+    redis_client.delete(first_msg_key)
+
+    history = get_message_history(str(conversation_id), str(first_msg_id))
+    if not history:
+        logger.warning(
+            "No message history found for %s starting at %s",
+            conversation_id,
+            first_msg_id,
+        )
+        return
+
+    logger.info(
+        "Fetched %d messages from history for conversation %s starting at %s",
+        len(history),
+        conversation_id,
+        first_msg_id,
+    )
+
+    # 3. Gom tin nhắn (Concatenate messages)
+    customer_messages = []
+
+    # Depending on the API, if passing 1676 returns [1676, 1677, 1678], it's from oldest to newest.
+    # If it returns [1678, 1677, 1676], it's newest to oldest.
+    # Usually we want chronological order for the AI: "Help \n Giúp tôi với \n Hihi"
+
+    # Let's ensure we process them correctly. If the API returns them chronologically (oldest first):
+    for msg in history:
+        if msg.get("sender_type") != "customer":
+            # If an admin or bot replied in the middle, we stop collecting.
+            break
+
+        content_msg = msg.get("content")
+        if content_msg:
+            customer_messages.append(str(content_msg))
+
+        if len(customer_messages) >= 5:
+            break
+
+    if not customer_messages:
+        logger.info("No customer messages found to check for %s", conversation_id)
+        return
+
+    # If the history was newest-to-oldest, we'd reverse it. But given the previous log,
+    # if passing 1676 returns 1677, 1678, it's chronological (oldest to newest).
+    # So we don't need to reverse.
+    concatenated_content = "\n".join(customer_messages)
+
+    logger.info(
+        "Checking question for conversation %s: %s",
+        conversation_id,
+        concatenated_content,
+    )
+
+    # 4. Check if question
+    check_response = check_question(concatenated_content)
 
     if not check_response:
+        logger.error("check_question API returned no response for %s", conversation_id)
         return
 
     try:
-        if check_response.json().get("output") != "true":
+        is_question = check_response.json().get("output")
+        logger.info("AI check_question result for %s: %s", conversation_id, is_question)
+        if is_question != "true":
+            logger.info(
+                "Message evaluated as NOT a question. Aborting agent check for %s",
+                conversation_id,
+            )
             return
     except ValueError:
         logger.error("Failed to parse response from check_question")
         return
 
-    time_to_use_agent = conversation_info.get("time_to_use_agent")
-    if time_to_use_agent is None:
-        time_to_use_agent = 0
+    # 5. Question detected: Update latest_question_message and schedule agent check
+    redis_client.setex(
+        f"latest_question_message:{conversation_id}", 3600, str(message_id)
+    )
+    logger.info(
+        "Valid question detected for %s. Set latest_question_message to %s",
+        conversation_id,
+        message_id,
+    )
+
+    time_to_use_agent = conversation_info.get("time_to_use_agent", 0)
 
     bot_id = (
         (conversation_info.get("account") or {}).get("account_id")
@@ -337,7 +515,7 @@ def _schedule_agent_check(
         "conversation": conversation_id,
         "message_id": message_id,
         "time_to_use_agent": time_to_use_agent,
-        "content": data.get("content"),
+        "content": concatenated_content,  # passing the concatenated content
         "type": conversation_info.get("type"),
         "platform_conv_id": data.get("platform_conv_id"),
         "group_id": data.get("platform_conv_id"),
