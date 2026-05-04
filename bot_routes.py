@@ -263,11 +263,6 @@ async def send_bot_message(
         "type": request.type,
         "message_id": request.message_id,
         "platform_name": platform_name,
-        "attachments": (
-            [attachment.dict() for attachment in request.attachments]
-            if request.attachments
-            else None
-        ),
     }
 
     try:

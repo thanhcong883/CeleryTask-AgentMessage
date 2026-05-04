@@ -22,27 +22,7 @@ class CreateBotRequest(BaseModel):
     options: BotOptions
 
 
-class Attachment(BaseModel):
-    type: str = Field(
-        ...,
-        description="Type of attachment: image, document, video, audio",
-        examples=["image"],
-    )
-    url: str = Field(
-        ...,
-        description="Public URL of the attachment",
-        examples=["https://example.com/image.jpg"],
-    )
-    name: Optional[str] = Field(
-        None, description="Optional filename", examples=["image.jpg"]
-    )
-    mimetype: Optional[str] = Field(
-        None, description="Optional mimetype", examples=["image/jpeg"]
-    )
-
-
 class SendMessageRequest(BaseModel):
-
     content: str = Field(
         ..., description="Message content to send", examples=["Hello from the bot!"]
     )
@@ -63,10 +43,6 @@ class SendMessageRequest(BaseModel):
         None,
         description="Optional internal message ID for tracking and updates",
         examples=["msg_12345"],
-    )
-    attachments: Optional[List[Attachment]] = Field(
-        None,
-        description="List of attachments to send",
     )
 
 
