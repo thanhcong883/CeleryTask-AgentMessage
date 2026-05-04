@@ -67,7 +67,9 @@ async def universal_hook(
         _raw_content = raw_data.get("content")
         if isinstance(_raw_content, str):
             content = _raw_content
-        elif isinstance(body.get("text"), str) and not isinstance(_raw_content, dict):
+        elif isinstance(body.get("text"), str) and not isinstance(
+            _raw_content, dict
+        ):
             content = body.get("text")
         else:
             content = ""
@@ -254,7 +256,9 @@ async def universal_hook(
             # message. For self-sent private messages use the bot account id as sender_id so
             # Strapi keeps a distinct customer record for the admin.
             remote_jid = (
-                data_field.get("from") or raw_data.get("uidFrom") or body.get("from")
+                data_field.get("from")
+                or raw_data.get("uidFrom")
+                or body.get("from")
             )
             if is_self:
                 sender_id = received_bot_id or remote_jid
@@ -407,9 +411,7 @@ async def universal_hook(
             file_id = doc["file_id"]
             original_name = doc.get("file_name")
             ext = (
-                original_name.split(".")[-1]
-                if original_name and "." in original_name
-                else "doc"
+                original_name.split(".")[-1] if original_name and "." in original_name else "doc"
             )
             doc_mime = (doc.get("mime_type") or "").lower()
             media_kind = "image" if doc_mime.startswith("image/") else "file"
