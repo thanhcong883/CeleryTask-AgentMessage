@@ -28,24 +28,53 @@ class TelegramProvider:
     """Provider for sending messages to Telegram."""
 
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a text message via Telegram Bot API."""
+        """Send a text message or attachments via Telegram Bot API."""
         conf = config.PLATFORMS.get("Telegram", {})
-        # todo: get token from redis by bot_id
-        url = conf.get("url", "").format(token=data.get("token", ""))
+        token = data.get("token", "")
+        base_url = f"https://api.telegram.org/bot{token}"
 
         # Determine appropriate ID field depending on chat type
         chat_id = data.get("group_id") or data.get("user_id")
-
-        payload = {
-            "chat_id": chat_id,
-            "text": data.get("content"),
-        }
+        content = data.get("content")
+        attachments = data.get("attachments")
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
-            response.raise_for_status()
-            logger.info("Successfully sent Telegram message.")
-            return response.json()
+            if not attachments:
+                url = f"{base_url}/sendMessage"
+                payload = {"chat_id": chat_id, "text": content}
+                response = requests.post(url, json=payload, timeout=10)
+                response.raise_for_status()
+                logger.info("Successfully sent Telegram text message.")
+                return response.json()
+            else:
+                last_response = None
+                for i, att in enumerate(attachments):
+                    att_type = att.get("type", "document")
+                    url_part = ""
+                    payload = {"chat_id": chat_id}
+                    if i == 0 and content:
+                        payload["caption"] = content
+
+                    if att_type == "image":
+                        url_part = "/sendPhoto"
+                        payload["photo"] = att.get("url")
+                    elif att_type == "video":
+                        url_part = "/sendVideo"
+                        payload["video"] = att.get("url")
+                    elif att_type == "audio":
+                        url_part = "/sendAudio"
+                        payload["audio"] = att.get("url")
+                    else:
+                        url_part = "/sendDocument"
+                        payload["document"] = att.get("url")
+
+                    url = f"{base_url}{url_part}"
+                    response = requests.post(url, json=payload, timeout=10)
+                    response.raise_for_status()
+                    last_response = response.json()
+                logger.info("Successfully sent Telegram attachment messages.")
+                return last_response or {}
+
         except RequestException as e:
             logger.error(
                 "Failed to send Telegram message. Data: %s, Error: %s",
@@ -89,6 +118,11 @@ class ZaloProvider:
             "threadId": conv_id,
             "type": msg_type,
         }
+        attachments = data.get("attachments")
+        if attachments:
+            payload["attachments"] = [
+                att.get("url") for att in attachments if att.get("url")
+            ]
 
         try:
             response = requests.post(url, json=payload, timeout=10)
@@ -139,6 +173,11 @@ class WhatsappProvider:
             "threadId": conv_id,
             "type": msg_type,
         }
+        attachments = data.get("attachments")
+        if attachments:
+            payload["attachments"] = [
+                att.get("url") for att in attachments if att.get("url")
+            ]
 
         try:
             response = requests.post(url, json=payload, timeout=10)
