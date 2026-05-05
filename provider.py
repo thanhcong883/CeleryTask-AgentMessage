@@ -125,7 +125,7 @@ class ZaloProvider:
             ]
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
+            response = requests.post(url, json=payload, timeout=30)
             response.raise_for_status()
             logger.info("Successfully sent message via external API.")
             return response.json()
