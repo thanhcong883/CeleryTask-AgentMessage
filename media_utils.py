@@ -133,7 +133,7 @@ def upload_to_s3(local_path: str, s3_key: str) -> Optional[str]:
         s3_client.upload_file(local_path, config.AWS_BUCKET_NAME, s3_key)
 
         if config.AWS_PUBLIC_URL_BASE:
-            url = f"{config.AWS_PUBLIC_URL_BASE.rstrip('/')}/{config.AWS_BUCKET_NAME}/{s3_key}"
+            url = f"{config.AWS_PUBLIC_URL_BASE.rstrip('/')}/{s3_key}"
         elif config.AWS_ENDPOINT_URL:
             url = f"{config.AWS_ENDPOINT_URL.rstrip('/')}/{config.AWS_BUCKET_NAME}/{s3_key}"
         elif config.AWS_REGION == "us-east-1":
