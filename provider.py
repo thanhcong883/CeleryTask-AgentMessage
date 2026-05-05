@@ -141,8 +141,28 @@ class ZaloProvider:
 class WhatsappProvider:
     """Provider for sending messages to WhatsApp via External API."""
 
+    # Map attachment type → Baileys message key
+    _BAILEYS_KEY = {
+        "image": "image",
+        "video": "video",
+        "audio": "audio",
+        "document": "document",
+        "file": "document",
+        "sticker": "sticker",
+    }
+
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a text message via External WhatsApp API."""
+        """Send a text or media message via External WhatsApp API (baileys2api).
+
+        baileys2api ``/api/{accountId}/send`` accepts:
+        - ``text`` (str): plain text – forwarded as ``{ text }`` to Baileys.
+        - ``message`` (object): a raw Baileys message object, e.g.
+          ``{ image: { url }, caption }`` – forwarded as-is to
+          ``sock.sendMessage(to, message)``.
+
+        When *attachments* are present we build proper Baileys message objects
+        so that images / documents / videos / audio are actually delivered.
+        """
         logger.info(
             "Sending WhatsApp message through external API with data: %s",
             _mask_token(data),
@@ -168,22 +188,68 @@ class WhatsappProvider:
         content_hash = hashlib.md5((content or "").encode()).hexdigest()
         redis_client.setex(f"bot_sent:{conv_id}:{content_hash}", 60, "1")
 
-        payload = {
-            "text": content,
-            "threadId": conv_id,
-            "type": msg_type,
-        }
         attachments = data.get("attachments")
-        if attachments:
-            payload["attachments"] = [
-                att.get("url") for att in attachments if att.get("url")
-            ]
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
-            response.raise_for_status()
-            logger.info("Successfully sent message via external WhatsApp API.")
-            return response.json()
+            last_response = None
+
+            if attachments:
+                # Send each attachment as a separate Baileys message object.
+                for i, att in enumerate(attachments):
+                    att_url = att.get("url")
+                    if not att_url:
+                        continue
+
+                    att_type = (att.get("type") or "document").lower()
+                    baileys_key = self._BAILEYS_KEY.get(att_type, "document")
+
+                    # Build the Baileys message object, e.g.:
+                    #   { image: { url: "https://..." }, caption: "hello" }
+                    baileys_msg: Dict[str, Any] = {
+                        baileys_key: {"url": att_url},
+                    }
+
+                    # Attach caption only on the first media message
+                    if i == 0 and content:
+                        baileys_msg["caption"] = content
+
+                    # For documents, include the original filename if available
+                    if baileys_key == "document":
+                        filename = att.get("name") or att_url.rsplit("/", 1)[-1]
+                        baileys_msg["fileName"] = filename
+                        mimetype = att.get("mimetype")
+                        if mimetype:
+                            baileys_msg["mimetype"] = mimetype
+
+                    payload = {
+                        "message": baileys_msg,
+                        "threadId": conv_id,
+                        "type": msg_type,
+                    }
+                    logger.info(
+                        "Sending WhatsApp media (%s) payload: %s", att_type, payload
+                    )
+                    response = requests.post(url, json=payload, timeout=30)
+                    response.raise_for_status()
+                    last_response = response.json()
+
+                logger.info(
+                    "Successfully sent %d attachment(s) via external WhatsApp API.",
+                    len(attachments),
+                )
+                return last_response or {}
+            else:
+                # Plain text message
+                payload = {
+                    "text": content,
+                    "threadId": conv_id,
+                    "type": msg_type,
+                }
+                response = requests.post(url, json=payload, timeout=10)
+                response.raise_for_status()
+                logger.info("Successfully sent text message via external WhatsApp API.")
+                return response.json()
+
         except RequestException as e:
             logger.error(
                 "Failed to send message via external WhatsApp API. URL: %s, Error: %s",
