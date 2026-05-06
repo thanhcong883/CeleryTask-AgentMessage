@@ -64,15 +64,34 @@ def download_file_generic(url: str, save_path: str) -> bool:
     Generic file download via GET.
     """
     try:
-        response = requests.get(url, stream=True, timeout=30)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        response = requests.get(url, stream=True, timeout=30, headers=headers)
+        logger.info(
+            f"Download response: status={response.status_code}, "
+            f"content-length={response.headers.get('content-length')}, "
+            f"content-type={response.headers.get('content-type')}, url={url}"
+        )
         response.raise_for_status()
 
         # Ensure directory exists
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
+        bytes_written = 0
         with open(save_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
+                bytes_written += len(chunk)
+
+        # Verify file is not empty
+        file_size = os.path.getsize(save_path)
+        if file_size == 0:
+            logger.error(f"Downloaded file is 0 bytes from {url} (bytes_written={bytes_written})")
+            os.remove(save_path)
+            return False
+
+        logger.info(f"Downloaded {file_size} bytes from {url} to {save_path}")
         return True
     except Exception as e:
         logger.error(f"Failed to download file from {url}: {e}")
