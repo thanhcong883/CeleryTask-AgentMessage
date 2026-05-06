@@ -286,25 +286,64 @@ You must ONLY use the provided Question and Chat history.
 
 DEFINITIONS:
 
-A message is considered a VALID HANDLING if:
-1. The role is "admin" or "bot"
-AND
-2. The message satisfies AT LEAST ONE of the following:
+A message is considered a VALID HANDLING if it satisfies AT LEAST ONE of the following:
 
    A. DIRECT ANSWER
       - Directly resolves the question
       - Provides guidance, explanation, or solution
-      - Semantically answers the user's request
+      - Confirms the task is being handled (e.g., "để em xem", "đang xử lý")
+      - Confirms inability or delay with a reason (e.g., "chưa làm được vì...", "đang bận")
+      - Semantically answers the user's request, even if answered by a third party
 
    B. CLARIFYING QUESTION
       - Asks for more information in order to handle the question
       - Is logically related to the question
-      - Example:
+      - Examples:
         - "Bạn gặp khó khăn gì?"
         - "Lỗi xảy ra khi nào?"
-        - "Bạn có thể mô tả rõ hơn không?"
+        - "Đây là code hả?"
 
-If NO such message exists in the chat history, the answer is considered NONE.
+   C. DELEGATION / REDIRECTION
+      - Explicitly forwards or assigns the question to another person or team
+      - Examples:
+        - "nhờ anh @X xử lý"
+        - "chuyển cho team Y nhé"
+        - "anh @Z có thể giúp việc này"
+
+   D. SCHEDULED HANDLING
+      - Commits to handling the question at a specific later time
+      - Examples:
+        - "để mai anh xử lý"
+        - "chiều nay em làm"
+        - "chờ anh chút"
+
+   E. MEANINGFUL ACKNOWLEDGEMENT
+      - A short but clearly intentional acknowledgement that signals the question
+        has been received and will be handled
+      - Includes: "ok", "được", "hiểu rồi", thumbs-up emoji (👍), check emoji (✅)
+      - Must appear in direct reply to the question or immediately after it
+        in the conversation flow
+
+
+EXCLUSION RULES:
+- A message is NOT a VALID HANDLING if:
+  1. It is the original question itself or a restatement of it
+  2. It is sent by the same person who asked the question
+  3. It is completely unrelated to the question (off-topic, side conversation)
+  4. It only repeats or quotes the question without adding new information
+  5. It is a meaningless reaction (random emojis, stickers with no acknowledgement intent)
+  6. It is a deleted message placeholder (e.g., "[tin nhắn đã bị xóa]")
+  7. It is a response that clearly misunderstands the question and addresses
+     a completely different topic
+  8. It is an ambiguous one-word reply (e.g., "ok", "được") that appears
+     in a different conversation thread unrelated to the question
+
+
+PARTIAL HANDLING RULES:
+- If the question contains multiple sub-questions:
+  - A message that answers AT LEAST ONE sub-question is considered VALID
+- If the answer only partially addresses the question but shows clear
+  intent to handle it, it is considered VALID
 
 
 INPUT:
@@ -312,13 +351,17 @@ Question:
 {question}
 
 Chat history:
-
 {history_chat}
 
+
 INSTRUCTIONS:
-- Compare the question with EACH chat message.
-- If ANY valid answer is found, return true.
-- If NONE are found, return false.
+- Identify the person who asked the question.
+- Ignore all messages sent by that same person.
+- Compare the question with EACH remaining message in the chat history.
+- Apply EXCLUSION RULES first to filter out invalid messages.
+- Then check if any remaining message satisfies at least one condition (A to E).
+- If ANY message qualifies as a VALID HANDLING, return true.
+- If NONE qualify, return false.
 
 OUTPUT:
 Return ONLY:
@@ -379,24 +422,122 @@ def check_question(content: str) -> Optional[requests.Response]:
         system_prompt = """You are a strict binary classifier.
 
 Task:
+Determine whether the following message is a QUESTION or REQUEST that expects
+a response, help, or action.
 
-Determine whether the following message is a QUESTION.
 
-Return true if the message:
+RETURN TRUE if the message:
 
-- Directly asks a question OR
-- Reports a problem, error, or unusual situation OR
-- Expresses uncertainty or doubt that has a legitimate reason to expect confirmation, explanation, or help
-- Requests assistance or to do something
+   A. EXPLICIT QUESTION
+      - Contains a direct question (with or without a question mark)
+      - Examples:
+        - "lỗi này fix thế nào?"
+        - "sao hệ thống chậm vậy"
+        - "đã xong chưa"
 
-Return false if the message:
+   B. PROBLEM / ERROR REPORT
+      - Reports a bug, error, incident, or abnormal situation
+      - Implies that help or investigation is needed
+      - Examples:
+        - "hệ thống đang bị lỗi"
+        - "em vừa deploy xong mà user vẫn báo lỗi"
+        - "không vào được trang chủ"
 
-- Is just a greeting or goodbye
-- Is an affirmation or acknowledgment
+   C. IMPLICIT QUESTION
+      - Does not ask directly but clearly implies a need for explanation,
+        confirmation, or help
+      - Examples:
+        - "không biết sao hôm nay hệ thống chậm thế"
+        - "trời ơi sao lại thế này???"
+        - "cái này kỳ lạ thật"
 
-- Is a clear statement NOT expecting a response
+   D. EXPLICIT REQUEST / COMMAND
+      - Asks someone to do something or provide something
+      - May or may not include a question mark
+      - Examples:
+        - "check giúp anh"
+        - "xem lại cái này"
+        - "anh xử lý giúp em với"
+        - "cần support gấp"
 
-- Is polite or polite conversationalism"""
+   E. CONFIRMATION REQUEST
+      - Asks to verify or confirm a fact, status, or action
+      - Examples:
+        - "anh xử lý rồi đúng không?"
+        - "đã done chưa?"
+        - "merge rồi phải không?"
+
+   F. MIXED MESSAGE (notify + ask)
+      - Contains at least one part that qualifies as A–E above,
+        even if other parts are pure statements
+      - Examples:
+        - "em đã thử cách đó rồi nhưng vẫn không được, giờ làm sao?"
+        - "deploy xong rồi, anh kiểm tra giúp em nhé"
+
+   G. TAG + CONTENT REQUIRING ACTION
+      - Tags a person or group AND includes content that requires a response or action
+      - Examples:
+        - "@admin hệ thống đang lỗi"
+        - "@team check giúp với"
+
+
+RETURN FALSE if the message:
+
+   A. GREETING / FAREWELL
+      - "xin chào", "hi", "bye", "good morning"
+
+   B. PURE ACKNOWLEDGEMENT
+      - "ok", "được", "hiểu rồi", "noted", "👍", "✅"
+      - Does not accompany any question or request
+
+   C. PURE STATEMENT / ANNOUNCEMENT
+      - Shares information with no expectation of response or action
+      - Examples:
+        - "em đã fix xong rồi nhé"
+        - "deploy lúc 3h chiều"
+        - "meeting dời sang thứ 4"
+
+   D. RHETORICAL QUESTION / TALKING TO SELF
+      - Phrased as a question but clearly not directed at anyone
+        and does not expect an answer
+      - Examples:
+        - "sao cái này khó thế không biết"
+        - "ôi trời, tại sao mình lại quên nhỉ"
+
+   E. POLITE CONVERSATIONALISM
+      - Small talk or social pleasantries with no request embedded
+      - Examples:
+        - "cảm ơn anh nhiều nhé"
+        - "chúc anh cuối tuần vui vẻ"
+
+   F. TAG + PURE ACKNOWLEDGEMENT
+      - Tags someone but content is only an acknowledgement, not a request
+      - Examples:
+        - "@admin ok nhé"
+        - "@team noted rồi"
+
+
+AMBIGUITY RULES:
+- If the message could belong to both TRUE and FALSE categories,
+  lean toward TRUE (assume the sender expects a response).
+- Short emotional expressions (e.g., "???", "!!!") combined with
+  context suggesting a problem → TRUE.
+- Colloquial or abbreviated language (e.g., "lỗi r", "fix sao ta",
+  "sao vậy ta") should still be classified correctly based on intent.
+
+
+INPUT:
+Message:
+{message}
+
+
+OUTPUT:
+Return ONLY:
+- true
+- false
+
+Do NOT explain.
+Do NOT add text."""
 
         response = client.chat.completions.create(
             # Specify the Ark Inference Point ID that you created, which has been changed for you here to your Endpoint ID
