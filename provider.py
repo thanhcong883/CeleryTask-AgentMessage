@@ -38,10 +38,15 @@ class TelegramProvider:
         content = data.get("content")
         attachments = data.get("attachments")
 
+        # Reply support: if reply_to_message_id is provided, include it in payloads
+        reply_to_message_id = data.get("reply_to_message_id")
+
         try:
             if not attachments:
                 url = f"{base_url}/sendMessage"
                 payload = {"chat_id": chat_id, "text": content}
+                if reply_to_message_id:
+                    payload["reply_to_message_id"] = reply_to_message_id
                 response = requests.post(url, json=payload, timeout=10)
                 response.raise_for_status()
                 logger.info("Successfully sent Telegram text message.")
@@ -54,6 +59,8 @@ class TelegramProvider:
                     payload = {"chat_id": chat_id}
                     if i == 0 and content:
                         payload["caption"] = content
+                    if i == 0 and reply_to_message_id:
+                        payload["reply_to_message_id"] = reply_to_message_id
 
                     if att_type == "image":
                         url_part = "/sendPhoto"
@@ -118,6 +125,12 @@ class ZaloProvider:
             "threadId": conv_id,
             "type": msg_type,
         }
+
+        # Reply support: build a quote object for zca2api
+        reply_to_message_id = data.get("reply_to_message_id")
+        if reply_to_message_id:
+            payload["quote"] = {"globalMsgId": str(reply_to_message_id)}
+
         attachments = data.get("attachments")
         if attachments:
             payload["attachments"] = [
@@ -226,6 +239,10 @@ class WhatsappProvider:
                         "threadId": conv_id,
                         "type": msg_type,
                     }
+                    # Reply support: only attach quotedMessageId on first media
+                    reply_to_message_id = data.get("reply_to_message_id")
+                    if i == 0 and reply_to_message_id:
+                        payload["quotedMessageId"] = str(reply_to_message_id)
                     logger.info(
                         "Sending WhatsApp media (%s) payload: %s", att_type, payload
                     )
@@ -245,6 +262,10 @@ class WhatsappProvider:
                     "threadId": conv_id,
                     "type": msg_type,
                 }
+                # Reply support
+                reply_to_message_id = data.get("reply_to_message_id")
+                if reply_to_message_id:
+                    payload["quotedMessageId"] = str(reply_to_message_id)
                 response = requests.post(url, json=payload, timeout=10)
                 response.raise_for_status()
                 logger.info("Successfully sent text message via external WhatsApp API.")

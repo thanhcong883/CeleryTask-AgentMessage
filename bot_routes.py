@@ -263,6 +263,7 @@ async def send_bot_message(
         "type": request.type,
         "message_id": request.message_id,
         "platform_name": platform_name,
+        "reply_to_message_id": request.reply_to_message_id,
         "attachments": (
             [attachment.dict() for attachment in request.attachments]
             if request.attachments
