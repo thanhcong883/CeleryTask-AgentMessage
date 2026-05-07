@@ -70,6 +70,11 @@ def update_message_platform(
     if mess_id:
         update_payload["message_id"] = mess_id
 
+    # sender_id = bot's account_id
+    bot_id = data.get("bot_id")
+    if bot_id:
+        update_payload["sender_id"] = str(bot_id)
+
     platform_title: str = platform.title()
 
     if platform_title == "Telegram":
