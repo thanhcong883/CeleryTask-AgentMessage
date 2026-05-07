@@ -87,23 +87,21 @@ def update_message_platform(
             }
         )
     elif platform_title == "Zalo":
-        # zca-js sendMessage returns: { message: { data: { msgId: "..." } }, attachment: [] }
-        # Try all possible paths for backward compatibility
-        zalo_msg: Dict[str, Any] = result.get("message") or {}
-        zalo_msg_data: Dict[str, Any] = zalo_msg.get("data", {}) if isinstance(zalo_msg, dict) else {}
-        zalo_data: Dict[str, Any] = result.get("data", {})
+        # zca-js sendMessage returns: { message: { msgId: 7800... }, attachment: [] }
+        zalo_msg = result.get("message") or {}
+        zalo_msg_data = zalo_msg.get("data", {}) if isinstance(zalo_msg, dict) else {}
+        zalo_data = result.get("data", {})
 
         platform_msg_id = (
-            str(zalo_msg_data.get("msgId", ""))
-            or str(zalo_msg_data.get("message_id", ""))
+            str(zalo_msg.get("msgId", "") if isinstance(zalo_msg, dict) else "")
+            or str(zalo_msg_data.get("msgId", ""))
             or str(result.get("msgId", ""))
             or str(zalo_data.get("msgId", ""))
             or str(zalo_data.get("message_id", ""))
-            or str(result.get("message_id", ""))
             or ""
         )
 
-        logger.info("Zalo platform_msg_id extraction: result=%s, extracted=%s", result, platform_msg_id)
+        logger.info("Zalo platform_msg_id extracted: %s", platform_msg_id)
 
         update_payload.update(
             {
