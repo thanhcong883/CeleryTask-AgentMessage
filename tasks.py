@@ -551,7 +551,13 @@ def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
         platform: str, message_data: Dict[str, Any], send_result: Any
     ) -> None:
         """Callback executed after successful message send."""
+        logger.info(
+            "on_success_callback: platform=%s, send_result=%s", platform, send_result
+        )
         update_payload = update_message_platform(platform, message_data, send_result)
+        logger.info(
+            "on_success_callback: update_payload=%s", update_payload
+        )
 
         # Mark this platform_msg_id as already handled by our system to avoid echo sync
         platform_msg_id = update_payload.get("platform_msg_id")
@@ -563,9 +569,12 @@ def send_message(data: Dict[str, Any], sender_type: str = "admin") -> None:
         logger.info("Save bot message success: %s", message_data)
         # Update message status in Strapi
         if not message_data.get("message_id"):
+            logger.warning(
+                "on_success_callback: No message_id in data, skipping update"
+            )
             return
         response = update_message(update_payload)
-        logger.info("Update message: %s", response)
+        logger.info("Update message response: %s", response)
         if not response:
             logger.error("Failed to update message %s", message_data.get("message_id"))
             return
