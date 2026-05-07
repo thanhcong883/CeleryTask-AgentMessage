@@ -82,21 +82,35 @@ def update_message_platform(
             }
         )
     elif platform_title == "Zalo":
+        # zca2api returns zca-js result directly: { msgId, ... }
+        # Also try nested data.message_id for compatibility
         zalo_data: Dict[str, Any] = result.get("data", {})
+        platform_msg_id = (
+            str(result.get("msgId", ""))
+            or str(zalo_data.get("message_id", ""))
+            or str(zalo_data.get("msgId", ""))
+            or str(result.get("message_id", ""))
+            or ""
+        )
         update_payload.update(
             {
-                "platform_msg_id": str(zalo_data.get("message_id", "")),
+                "platform_msg_id": platform_msg_id,
                 "content": data.get("content", ""),
                 "datetime": format_datetime(data.get("sent_time")),
             }
         )
     elif platform_title == "Whatsapp":
-        # The external API might return the ID in different formats depending on the provider
-        # Try to extract from common locations
+        # baileys2api returns: { success, accountId, key: { remoteJid, id, fromMe } }
+        # The platform_msg_id is in key.id
         whatsapp_data: Dict[str, Any] = result.get("data") or result
 
         platform_msg_id = (
-            whatsapp_data.get("message_id")
+            (
+                result.get("key", {}).get("id")
+                if isinstance(result.get("key"), dict)
+                else ""
+            )
+            or whatsapp_data.get("message_id")
             or whatsapp_data.get("id")
             or (
                 whatsapp_data.get("key", {}).get("id")
