@@ -138,15 +138,24 @@ class ZaloProvider:
             ]
 
         try:
+            logger.info("Sending Zalo payload: %s", payload)
             response = requests.post(url, json=payload, timeout=30)
             response.raise_for_status()
             logger.info("Successfully sent message via external API.")
             return response.json()
         except RequestException as e:
+            # Log response body for debugging
+            resp_body = ""
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    resp_body = e.response.text
+                except Exception:
+                    pass
             logger.error(
-                "Failed to send message via external API. URL: %s, Error: %s",
+                "Failed to send message via external API. URL: %s, Error: %s, Response: %s",
                 url,
                 str(e),
+                resp_body,
             )
             raise
 
