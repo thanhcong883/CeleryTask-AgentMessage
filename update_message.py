@@ -87,16 +87,24 @@ def update_message_platform(
             }
         )
     elif platform_title == "Zalo":
-        # zca2api returns zca-js result directly: { msgId, ... }
-        # Also try nested data.message_id for compatibility
+        # zca-js sendMessage returns: { message: { data: { msgId: "..." } }, attachment: [] }
+        # Try all possible paths for backward compatibility
+        zalo_msg: Dict[str, Any] = result.get("message") or {}
+        zalo_msg_data: Dict[str, Any] = zalo_msg.get("data", {}) if isinstance(zalo_msg, dict) else {}
         zalo_data: Dict[str, Any] = result.get("data", {})
+
         platform_msg_id = (
-            str(result.get("msgId", ""))
-            or str(zalo_data.get("message_id", ""))
+            str(zalo_msg_data.get("msgId", ""))
+            or str(zalo_msg_data.get("message_id", ""))
+            or str(result.get("msgId", ""))
             or str(zalo_data.get("msgId", ""))
+            or str(zalo_data.get("message_id", ""))
             or str(result.get("message_id", ""))
             or ""
         )
+
+        logger.info("Zalo platform_msg_id extraction: result=%s, extracted=%s", result, platform_msg_id)
+
         update_payload.update(
             {
                 "platform_msg_id": platform_msg_id,
