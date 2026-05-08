@@ -383,10 +383,10 @@ async def universal_hook(
         msg_type = "private" if chat.get("type") == "private" else "group"
         message_id = message.get("message_id")
         sender_time = message.get("date")
-        # todo: if first_name or last_name is None use username
-        name = from_user.get("first_name") or from_user.get("username") + " " + (
-            from_user.get("last_name") or ""
-        )
+        # Build display name: "first_name last_name", fallback to username
+        first = from_user.get("first_name") or ""
+        last = from_user.get("last_name") or ""
+        name = f"{first} {last}".strip() or from_user.get("username") or "unknown"
 
         title = chat.get("title")
 
