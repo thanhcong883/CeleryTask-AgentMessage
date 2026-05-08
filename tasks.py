@@ -155,6 +155,15 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
         )
         return
 
+    # Skip if admin is actively handling the conversation
+    if redis_client.get(f"admin_active:{conversation_id}"):
+        logger.info(
+            "Admin is active in conversation %s. Skipping check_agent_answer for msg %s.",
+            conversation_id,
+            message_id,
+        )
+        return
+
     # If the bot is currently processing an answer for another message, we can choose to skip or wait.
     if redis_client.get(f"bot_processing:{conversation_id}"):
         logger.info(
@@ -422,6 +431,15 @@ def task_check_question(
         logger.info(
             "Newer message (%s) arrived for conversation %s, skipping check for %s",
             latest_msg_id,
+            conversation_id,
+            message_id,
+        )
+        return
+
+    # 1b. Skip if admin is actively handling the conversation
+    if redis_client.get(f"admin_active:{conversation_id}"):
+        logger.info(
+            "Admin is active in conversation %s. Skipping task_check_question for msg %s.",
             conversation_id,
             message_id,
         )
