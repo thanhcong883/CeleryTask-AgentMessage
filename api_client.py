@@ -278,7 +278,7 @@ def call_agent_webhook(payload: Dict[str, Any]) -> Optional[requests.Response]:
         question = payload.get("question", "")
         history_chat = json.dumps(payload.get("history_chat", []), ensure_ascii=False)
 
-        system_prompt = f"""ROLE:
+        system_prompt = """ROLE:
 You are a strict answer-verification engine.
 
 You are NOT allowed to infer, assume, or add information.
@@ -329,6 +329,7 @@ EXCLUSION RULES:
 - A message is NOT a VALID HANDLING if:
   1. It is the original question itself or a restatement of it
   2. It is sent by the same person who asked the question
+     (use the "sender_name" field to identify the sender)
   3. It is completely unrelated to the question (off-topic, side conversation)
   4. It only repeats or quotes the question without adding new information
   5. It is a meaningless reaction (random emojis, stickers with no acknowledgement intent)
@@ -346,17 +347,11 @@ PARTIAL HANDLING RULES:
   intent to handle it, it is considered VALID
 
 
-INPUT:
-Question:
-{question}
-
-Chat history:
-{history_chat}
-
-
 INSTRUCTIONS:
-- Identify the person who asked the question.
-- Ignore all messages sent by that same person.
+- Each message in the chat history has: "role" (customer/admin/bot),
+  "sender_name" (name of the sender), "content", and "datetime".
+- Identify the person who asked the question using sender_name.
+- Ignore all messages sent by that same sender_name.
 - Compare the question with EACH remaining message in the chat history.
 - Apply EXCLUSION RULES first to filter out invalid messages.
 - Then check if any remaining message satisfies at least one condition (A to E).
@@ -371,10 +366,17 @@ Return ONLY:
 Do NOT explain.
 Do NOT add text."""
 
+        user_content = f"""Question:
+{question}
+
+Chat history:
+{history_chat}"""
+
         response = client.chat.completions.create(
             model="ep-20260306171113-dqqlf",
             messages=[
-                {"role": "user", "content": system_prompt},
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
             ],
             temperature=0.0,
         )
@@ -526,11 +528,6 @@ AMBIGUITY RULES:
   "sao vậy ta") should still be classified correctly based on intent.
 
 
-INPUT:
-Message:
-{message}
-
-
 OUTPUT:
 Return ONLY:
 - true
@@ -623,6 +620,7 @@ def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         result.append(
             {
                 "role": msg.get("sender_type"),
+                "sender_name": msg.get("sender_name", ""),
                 "content": content,
                 "datetime": msg.get("datetime"),
             }

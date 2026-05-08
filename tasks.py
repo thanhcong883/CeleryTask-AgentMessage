@@ -134,6 +134,14 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     """
     conversation_id = data.get("conversation")
     message_id = data.get("message_id")
+    first_msg_id = data.get("first_msg_id") or message_id
+
+    logger.info(
+        "check_agent_answer started for conversation %s, message_id=%s, first_msg_id=%s",
+        conversation_id,
+        message_id,
+        first_msg_id,
+    )
 
     # DEBOUNCE CHECK (Level 2):
     # Only proceed if this is still the latest valid question from the user.
@@ -155,10 +163,21 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
         )
         return
 
-    # Fetch message history
-    history = get_message_history(str(conversation_id), str(message_id))
+    # Fetch message history using first_msg_id to capture the full context
+    # from the beginning of the debounce window
+    logger.info(
+        "Fetching history for conversation %s from first_msg_id=%s (latest msg=%s)",
+        conversation_id,
+        first_msg_id,
+        message_id,
+    )
+    history = get_message_history(str(conversation_id), str(first_msg_id))
     if history is None:
-        logger.warning("No message history found for %s", conversation_id)
+        logger.warning(
+            "No message history found for conversation %s from first_msg_id=%s",
+            conversation_id,
+            first_msg_id,
+        )
         return
 
     # Call agent to check if it can answer
@@ -514,6 +533,7 @@ def task_check_question(
     agent_check_data = {
         "conversation": conversation_id,
         "message_id": message_id,
+        "first_msg_id": first_msg_id,
         "time_to_use_agent": time_to_use_agent,
         "content": concatenated_content,  # passing the concatenated content
         "type": conversation_info.get("type"),
