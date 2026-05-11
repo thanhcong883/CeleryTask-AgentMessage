@@ -22,6 +22,29 @@ class CreateBotRequest(BaseModel):
     options: BotOptions
 
 
+class MentionItem(BaseModel):
+    offset: int = Field(
+        ...,
+        description="Starting position of the mention text in the message content",
+        examples=[6],
+    )
+    length: int = Field(
+        ...,
+        description="Length of the mention text in the message content",
+        examples=[5],
+    )
+    user_id: str = Field(
+        ...,
+        description="Platform-specific user ID of the mentioned user",
+        examples=["84901234567"],
+    )
+    display_name: Optional[str] = Field(
+        None,
+        description="Display name shown in the mention text (optional, for reference)",
+        examples=["John"],
+    )
+
+
 class Attachment(BaseModel):
     type: str = Field(
         ...,
@@ -72,6 +95,10 @@ class SendMessageRequest(BaseModel):
         None,
         description="Platform message ID of the message to reply/quote",
         examples=["3EB0A1B2C3D4E5F6"],
+    )
+    mentions: Optional[List[MentionItem]] = Field(
+        None,
+        description="List of user mentions/tags in the message (for group chats)",
     )
 
 

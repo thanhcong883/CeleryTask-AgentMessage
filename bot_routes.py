@@ -269,6 +269,11 @@ async def send_bot_message(
             if request.attachments
             else None
         ),
+        "mentions": (
+            [mention.dict() for mention in request.mentions]
+            if request.mentions
+            else None
+        ),
     }
 
     try:

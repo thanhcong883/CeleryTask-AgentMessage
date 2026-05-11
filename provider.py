@@ -63,6 +63,47 @@ def _extract_filename_from_url(url: str) -> str:
     return basename
 
 
+def _build_telegram_mention_text(content: str, mentions: list) -> str:
+    """Convert mentions into HTML-formatted text with tg://user links.
+
+    Processes mentions from right to left to preserve character offsets.
+    """
+    if not mentions or not content:
+        return content
+
+    # Sort by offset descending so earlier offsets are not shifted
+    sorted_mentions = sorted(mentions, key=lambda m: m["offset"], reverse=True)
+    result = content
+    for m in sorted_mentions:
+        offset = m["offset"]
+        length = m["length"]
+        user_id = m["user_id"]
+        display = result[offset : offset + length]
+        link = f'<a href="tg://user?id={user_id}">{display}</a>'
+        result = result[:offset] + link + result[offset + length :]
+    return result
+
+
+def _build_whatsapp_mentions(mentions: list) -> list:
+    """Convert generic mention items to Baileys JID format."""
+    if not mentions:
+        return []
+    jids = []
+    for m in mentions:
+        uid = m["user_id"]
+        if "@" not in uid:
+            uid = f"{uid}@s.whatsapp.net"
+        jids.append(uid)
+    return jids
+
+
+def _build_zalo_mentions(mentions: list) -> list:
+    """Convert generic mention items to zca-js Mention format {pos, uid, len}."""
+    if not mentions:
+        return []
+    return [{"pos": m["offset"], "uid": m["user_id"], "len": m["length"]} for m in mentions]
+
+
 class TelegramProvider:
     """Provider for sending messages to Telegram."""
 
@@ -82,11 +123,17 @@ class TelegramProvider:
 
         # Reply support: if reply_to is provided, include it in payloads
         reply_to = data.get("reply_to")
+        mentions = data.get("mentions")
 
         try:
             if not attachments:
                 url = f"{base_url}/sendMessage"
-                payload = {"chat_id": chat_id, "text": content}
+                # If mentions exist, use HTML parse_mode with tg://user links
+                if mentions:
+                    formatted_text = _build_telegram_mention_text(content, mentions)
+                    payload = {"chat_id": chat_id, "text": formatted_text, "parse_mode": "HTML"}
+                else:
+                    payload = {"chat_id": chat_id, "text": content}
                 if reply_to:
                     payload["reply_to_message_id"] = reply_to
                 response = requests.post(url, json=payload, timeout=10)
@@ -101,7 +148,11 @@ class TelegramProvider:
 
                     form_data = {"chat_id": chat_id}
                     if i == 0 and content:
-                        form_data["caption"] = content
+                        if mentions:
+                            form_data["caption"] = _build_telegram_mention_text(content, mentions)
+                            form_data["parse_mode"] = "HTML"
+                        else:
+                            form_data["caption"] = content
                     if i == 0 and reply_to:
                         form_data["reply_to_message_id"] = reply_to
 
@@ -222,6 +273,11 @@ class ZaloProvider:
         if reply_to:
             payload["quote"] = {"globalMsgId": str(reply_to)}
 
+        # Mention support: convert to zca-js format {pos, uid, len}
+        mentions = data.get("mentions")
+        if mentions:
+            payload["mentions"] = _build_zalo_mentions(mentions)
+
         attachments = data.get("attachments")
         if attachments:
             payload["attachments"] = [
@@ -334,6 +390,11 @@ class WhatsappProvider:
                         if mimetype:
                             baileys_msg["mimetype"] = mimetype
 
+                    # Mention support: add mentions JIDs to first media message
+                    mentions = data.get("mentions")
+                    if i == 0 and mentions:
+                        baileys_msg["mentions"] = _build_whatsapp_mentions(mentions)
+
                     payload = {
                         "message": baileys_msg,
                         "threadId": conv_id,
@@ -362,6 +423,10 @@ class WhatsappProvider:
                     "threadId": conv_id,
                     "type": msg_type,
                 }
+                # Mention support: pass mentions JIDs for Baileys
+                mentions = data.get("mentions")
+                if mentions:
+                    payload["mentions"] = _build_whatsapp_mentions(mentions)
                 # Reply support
                 reply_to = data.get("reply_to")
                 if reply_to:
