@@ -165,6 +165,13 @@ async def universal_hook(
                     if s3_url:
                         media_url = s3_url
 
+        # Extract reply_to: zca2api sends it at top level; fallback to raw quote data
+        reply_to = body.get("reply_to")
+        if not reply_to:
+            raw_quote = raw_data.get("quote") or {}
+            if isinstance(raw_quote, dict):
+                reply_to = raw_quote.get("globalMsgId") or raw_quote.get("msgId")
+
         msg_data = {
             "platform_name": "Zalo",
             "message_type": message_type,
@@ -180,6 +187,7 @@ async def universal_hook(
             "sender_time": sender_time,
             "title": title,
             "isSelf": body.get("isSelf"),
+            "reply_to": reply_to,
         }
     elif platform == "whatsapp":
         data_field = body.get("data") or {}
@@ -342,6 +350,26 @@ async def universal_hook(
                     f"Failed to download WhatsApp media for message {message_id} from {download_url}"
                 )
 
+        # Extract reply_to: baileys2api sends it in data.reply_to;
+        # fallback to contextInfo.stanzaId inside the message object
+        reply_to = data_field.get("reply_to")
+        if not reply_to:
+            for msg_key in [
+                "extendedTextMessage", "imageMessage", "videoMessage",
+                "documentMessage", "audioMessage", "stickerMessage",
+            ]:
+                sub_msg = wa_msg.get(msg_key) or {}
+                ctx = sub_msg.get("contextInfo") or {}
+                if ctx.get("stanzaId"):
+                    reply_to = ctx["stanzaId"]
+                    break
+            # Also check documentWithCaptionMessage
+            if not reply_to:
+                dwc_doc = doc_wrap_doc
+                ctx = (dwc_doc.get("contextInfo") or {}) if isinstance(dwc_doc, dict) else {}
+                if ctx.get("stanzaId"):
+                    reply_to = ctx["stanzaId"]
+
         msg_data = {
             "platform_name": "Whatsapp",
             "message_type": message_type,
@@ -357,6 +385,7 @@ async def universal_hook(
             "sender_time": sender_time,
             "title": title,
             "isSelf": is_self,
+            "reply_to": reply_to,
         }
     elif platform == "telegram":
         # {'update_id': 695761324, 'message': {'message_id': 77, 'from': {'id': 688310870, 'is_bot': False, 'first_name': 'Kiên', 'last_name': 'Hữu', 'username': 'Kiennh', 'language_code': 'en'}, 'chat': {'id': -5236384276, 'title': 'Kiên & agc', 'type': 'group', 'all_members_are_administrators': False, 'accepted_gift_types': {'unlimited_gifts': False, 'limited_gifts': False, 'unique_gifts': False, 'premium_subscription': False, 'gifts_from_channels': False}}, 'date': 1774945399, 'text': '1'}}
@@ -435,6 +464,14 @@ async def universal_hook(
                 if s3_url:
                     media_url = s3_url
 
+        # Extract reply_to: Telegram includes reply_to_message with message_id
+        reply_to = None
+        reply_to_msg = message.get("reply_to_message")
+        if reply_to_msg and isinstance(reply_to_msg, dict):
+            reply_to = reply_to_msg.get("message_id")
+            if reply_to is not None:
+                reply_to = str(reply_to)
+
         msg_data = {
             "platform_name": "Telegram",
             "message_type": message_type,
@@ -449,6 +486,7 @@ async def universal_hook(
             "name": name,
             "title": title,
             "sender_time": sender_time,
+            "reply_to": reply_to,
         }
     else:
         raise HTTPException(

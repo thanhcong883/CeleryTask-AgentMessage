@@ -1,8 +1,11 @@
 import hashlib
 import logging
+import os
+import tempfile
 import requests
 from requests.exceptions import RequestException
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 
 import config
 from database import redis_client
@@ -24,8 +27,47 @@ def _mask_token(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe_data
 
 
+def _download_to_temp(url: str) -> Optional[str]:
+    """Download a file from URL to a temporary file, return its path or None."""
+    try:
+        parsed = urlparse(url)
+        filename = os.path.basename(parsed.path) or "document"
+        suffix = ""
+        if "." in filename:
+            suffix = "." + filename.rsplit(".", 1)[-1]
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="tg_")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        resp = requests.get(url, stream=True, timeout=30, headers=headers)
+        resp.raise_for_status()
+        for chunk in resp.iter_content(chunk_size=8192):
+            tmp.write(chunk)
+        tmp.close()
+        file_size = os.path.getsize(tmp.name)
+        if file_size == 0:
+            logger.error("Downloaded file is 0 bytes from %s", url)
+            os.remove(tmp.name)
+            return None
+        logger.info("Downloaded %d bytes from %s to %s", file_size, url, tmp.name)
+        return tmp.name
+    except Exception as e:
+        logger.error("Failed to download %s for Telegram upload: %s", url, e)
+        return None
+
+
+def _extract_filename_from_url(url: str) -> str:
+    """Extract a human-readable filename from a URL."""
+    parsed = urlparse(url)
+    basename = os.path.basename(parsed.path) or "document"
+    return basename
+
+
 class TelegramProvider:
     """Provider for sending messages to Telegram."""
+
+    # Types that can be sent reliably via URL in JSON payload
+    _URL_TYPES = {"image"}
 
     def send(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Send a text message or attachments via Telegram Bot API."""
@@ -38,15 +80,15 @@ class TelegramProvider:
         content = data.get("content")
         attachments = data.get("attachments")
 
-        # Reply support: if reply_to_message_id is provided, include it in payloads
-        reply_to_message_id = data.get("reply_to_message_id")
+        # Reply support: if reply_to is provided, include it in payloads
+        reply_to = data.get("reply_to")
 
         try:
             if not attachments:
                 url = f"{base_url}/sendMessage"
                 payload = {"chat_id": chat_id, "text": content}
-                if reply_to_message_id:
-                    payload["reply_to_message_id"] = reply_to_message_id
+                if reply_to:
+                    payload["reply_to_message_id"] = reply_to
                 response = requests.post(url, json=payload, timeout=10)
                 response.raise_for_status()
                 logger.info("Successfully sent Telegram text message.")
@@ -55,38 +97,87 @@ class TelegramProvider:
                 last_response = None
                 for i, att in enumerate(attachments):
                     att_type = att.get("type", "document")
-                    url_part = ""
-                    payload = {"chat_id": chat_id}
+                    att_url = att.get("url")
+
+                    form_data = {"chat_id": chat_id}
                     if i == 0 and content:
-                        payload["caption"] = content
-                    if i == 0 and reply_to_message_id:
-                        payload["reply_to_message_id"] = reply_to_message_id
+                        form_data["caption"] = content
+                    if i == 0 and reply_to:
+                        form_data["reply_to_message_id"] = reply_to
 
                     if att_type == "image":
+                        # Images work fine with URL in JSON payload
                         url_part = "/sendPhoto"
-                        payload["photo"] = att.get("url")
+                        payload = {**form_data, "photo": att_url}
+                        api_url = f"{base_url}{url_part}"
+                        response = requests.post(api_url, json=payload, timeout=10)
                     elif att_type == "video":
                         url_part = "/sendVideo"
-                        payload["video"] = att.get("url")
+                        tmp_path = _download_to_temp(att_url)
+                        if tmp_path:
+                            try:
+                                api_url = f"{base_url}{url_part}"
+                                with open(tmp_path, "rb") as f:
+                                    files = {"video": (_extract_filename_from_url(att_url), f)}
+                                    response = requests.post(api_url, data=form_data, files=files, timeout=60)
+                            finally:
+                                os.remove(tmp_path)
+                        else:
+                            # Fallback: try URL directly
+                            payload = {**form_data, "video": att_url}
+                            api_url = f"{base_url}{url_part}"
+                            response = requests.post(api_url, json=payload, timeout=10)
                     elif att_type == "audio":
                         url_part = "/sendAudio"
-                        payload["audio"] = att.get("url")
+                        tmp_path = _download_to_temp(att_url)
+                        if tmp_path:
+                            try:
+                                api_url = f"{base_url}{url_part}"
+                                with open(tmp_path, "rb") as f:
+                                    files = {"audio": (_extract_filename_from_url(att_url), f)}
+                                    response = requests.post(api_url, data=form_data, files=files, timeout=60)
+                            finally:
+                                os.remove(tmp_path)
+                        else:
+                            payload = {**form_data, "audio": att_url}
+                            api_url = f"{base_url}{url_part}"
+                            response = requests.post(api_url, json=payload, timeout=10)
                     else:
+                        # file / document — must upload via multipart/form-data
                         url_part = "/sendDocument"
-                        payload["document"] = att.get("url")
+                        tmp_path = _download_to_temp(att_url)
+                        if tmp_path:
+                            try:
+                                api_url = f"{base_url}{url_part}"
+                                with open(tmp_path, "rb") as f:
+                                    files = {"document": (_extract_filename_from_url(att_url), f)}
+                                    response = requests.post(api_url, data=form_data, files=files, timeout=60)
+                            finally:
+                                os.remove(tmp_path)
+                        else:
+                            # Fallback: try URL directly
+                            payload = {**form_data, "document": att_url}
+                            api_url = f"{base_url}{url_part}"
+                            response = requests.post(api_url, json=payload, timeout=10)
 
-                    url = f"{base_url}{url_part}"
-                    response = requests.post(url, json=payload, timeout=10)
                     response.raise_for_status()
                     last_response = response.json()
                 logger.info("Successfully sent Telegram attachment messages.")
                 return last_response or {}
 
         except RequestException as e:
+            # Log the response body for debugging
+            resp_body = ""
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    resp_body = e.response.text
+                except Exception:
+                    pass
             logger.error(
-                "Failed to send Telegram message. Data: %s, Error: %s",
+                "Failed to send Telegram message. Data: %s, Error: %s, Response: %s",
                 _mask_token(data),
                 str(e),
+                resp_body,
             )
             raise
 
@@ -127,9 +218,9 @@ class ZaloProvider:
         }
 
         # Reply support: build a quote object for zca2api
-        reply_to_message_id = data.get("reply_to_message_id")
-        if reply_to_message_id:
-            payload["quote"] = {"globalMsgId": str(reply_to_message_id)}
+        reply_to = data.get("reply_to")
+        if reply_to:
+            payload["quote"] = {"globalMsgId": str(reply_to)}
 
         attachments = data.get("attachments")
         if attachments:
@@ -249,9 +340,9 @@ class WhatsappProvider:
                         "type": msg_type,
                     }
                     # Reply support: only attach quotedMessageId on first media
-                    reply_to_message_id = data.get("reply_to_message_id")
-                    if i == 0 and reply_to_message_id:
-                        payload["quotedMessageId"] = str(reply_to_message_id)
+                    reply_to = data.get("reply_to")
+                    if i == 0 and reply_to:
+                        payload["quotedMessageId"] = str(reply_to)
                     logger.info(
                         "Sending WhatsApp media (%s) payload: %s", att_type, payload
                     )
@@ -272,9 +363,9 @@ class WhatsappProvider:
                     "type": msg_type,
                 }
                 # Reply support
-                reply_to_message_id = data.get("reply_to_message_id")
-                if reply_to_message_id:
-                    payload["quotedMessageId"] = str(reply_to_message_id)
+                reply_to = data.get("reply_to")
+                if reply_to:
+                    payload["quotedMessageId"] = str(reply_to)
                 response = requests.post(url, json=payload, timeout=10)
                 response.raise_for_status()
                 logger.info("Successfully sent text message via external WhatsApp API.")

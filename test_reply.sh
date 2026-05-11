@@ -139,7 +139,7 @@ data = {
     "type": "user",
     "user_id": "628123456789",
     "bot_id": "your_whatsapp_account_id",
-    "reply_to_message_id": "3EB0A1B2C3D4E5F6",
+    "reply_to": "3EB0A1B2C3D4E5F6",
 }
 send_message.apply_async(args=(data, "admin"), queue="celery_send_message")
 PYTHON
@@ -158,7 +158,7 @@ data = {
     "type": "user",
     "user_id": "6643573306424440690",
     "bot_id": "your_zalo_account_id",
-    "reply_to_message_id": "7676592750243",
+    "reply_to": "7676592750243",
 }
 send_message.apply_async(args=(data, "admin"), queue="celery_send_message")
 PYTHON
@@ -177,7 +177,7 @@ data = {
     "type": "group",
     "group_id": "-5236384276",
     "token": "your_telegram_bot_token",
-    "reply_to_message_id": "77",
+    "reply_to": "77",
 }
 send_message.apply_async(args=(data, "admin"), queue="celery_send_message")
 PYTHON

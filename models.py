@@ -68,7 +68,7 @@ class SendMessageRequest(BaseModel):
         None,
         description="List of attachments to send",
     )
-    reply_to_message_id: Optional[str] = Field(
+    reply_to: Optional[str] = Field(
         None,
         description="Platform message ID of the message to reply/quote",
         examples=["3EB0A1B2C3D4E5F6"],
