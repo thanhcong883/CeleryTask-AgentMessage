@@ -390,16 +390,19 @@ class WhatsappProvider:
                         if mimetype:
                             baileys_msg["mimetype"] = mimetype
 
-                    # Mention support: add mentions JIDs to first media message
+                    # Mention support: pass full mention objects at payload level
                     mentions = data.get("mentions")
                     if i == 0 and mentions:
-                        baileys_msg["mentions"] = _build_whatsapp_mentions(mentions)
+                        pass  # mentions will be added to payload below
 
                     payload = {
                         "message": baileys_msg,
                         "threadId": conv_id,
                         "type": msg_type,
                     }
+                    # Mention support: pass full mention objects
+                    if i == 0 and mentions:
+                        payload["mentions"] = mentions
                     # Reply support: only attach quotedMessageId on first media
                     reply_to = data.get("reply_to")
                     if i == 0 and reply_to:
@@ -423,10 +426,10 @@ class WhatsappProvider:
                     "threadId": conv_id,
                     "type": msg_type,
                 }
-                # Mention support: pass mentions JIDs for Baileys
+                # Mention support: pass full mention objects for baileys2api to resolve
                 mentions = data.get("mentions")
                 if mentions:
-                    payload["mentions"] = _build_whatsapp_mentions(mentions)
+                    payload["mentions"] = mentions  # pass raw [{offset, length, user_id, ...}]
                 # Reply support
                 reply_to = data.get("reply_to")
                 if reply_to:
