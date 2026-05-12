@@ -66,21 +66,24 @@ def _extract_filename_from_url(url: str) -> str:
 def _build_telegram_mention_text(content: str, mentions: list) -> str:
     """Convert mentions into HTML-formatted text with tg://user links.
 
-    Processes mentions from right to left to preserve character offsets.
+    Finds @display_name in the text and replaces with HTML link.
     """
     if not mentions or not content:
         return content
 
-    # Sort by offset descending so earlier offsets are not shifted
-    sorted_mentions = sorted(mentions, key=lambda m: m["offset"], reverse=True)
     result = content
-    for m in sorted_mentions:
-        offset = m["offset"]
-        length = m["length"]
+    for m in mentions:
         user_id = m["user_id"]
-        display = result[offset : offset + length]
-        link = f'<a href="tg://user?id={user_id}">{display}</a>'
-        result = result[:offset] + link + result[offset + length :]
+        display_name = m.get("display_name", "")
+        if not display_name:
+            continue
+        # Find @display_name (case-insensitive) and replace with tg://user link
+        pattern = f"@{display_name}"
+        idx = result.lower().find(pattern.lower())
+        if idx >= 0:
+            original = result[idx : idx + len(pattern)]
+            link = f'<a href="tg://user?id={user_id}">{original}</a>'
+            result = result[:idx] + link + result[idx + len(pattern) :]
     return result
 
 
@@ -97,11 +100,24 @@ def _build_whatsapp_mentions(mentions: list) -> list:
     return jids
 
 
-def _build_zalo_mentions(mentions: list) -> list:
-    """Convert generic mention items to zca-js Mention format {pos, uid, len}."""
-    if not mentions:
+def _build_zalo_mentions(content: str, mentions: list) -> list:
+    """Convert generic mention items to zca-js Mention format {pos, uid, len}.
+
+    Finds @display_name in text and calculates pos/len automatically.
+    """
+    if not mentions or not content:
         return []
-    return [{"pos": m["offset"], "uid": m["user_id"], "len": m["length"]} for m in mentions]
+    result = []
+    for m in mentions:
+        display_name = m.get("display_name", "")
+        uid = m["user_id"]
+        if not display_name:
+            continue
+        pattern = f"@{display_name}"
+        idx = content.lower().find(pattern.lower())
+        if idx >= 0:
+            result.append({"pos": idx, "uid": uid, "len": len(pattern)})
+    return result
 
 
 class TelegramProvider:
@@ -276,7 +292,7 @@ class ZaloProvider:
         # Mention support: convert to zca-js format {pos, uid, len}
         mentions = data.get("mentions")
         if mentions:
-            payload["mentions"] = _build_zalo_mentions(mentions)
+            payload["mentions"] = _build_zalo_mentions(content, mentions)
 
         attachments = data.get("attachments")
         if attachments:
