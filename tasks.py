@@ -477,8 +477,8 @@ def task_check_question(
         first_msg_id,
     )
 
-    # 3. Gom tin nhắn (Concatenate messages)
-    customer_messages = []
+    # 3. Gom tin nhắn (Concatenate messages) with their platform_msg_id
+    customer_messages = []  # list of {"id": platform_msg_id, "content": text}
 
     # Depending on the API, if passing 1676 returns [1676, 1677, 1678], it's from oldest to newest.
     # If it returns [1678, 1677, 1676], it's newest to oldest.
@@ -492,7 +492,10 @@ def task_check_question(
 
         content_msg = msg.get("content")
         if content_msg:
-            customer_messages.append(str(content_msg))
+            customer_messages.append({
+                "id": msg.get("platform_msg_id", ""),
+                "content": str(content_msg),
+            })
 
         if len(customer_messages) >= 5:
             break
@@ -504,7 +507,7 @@ def task_check_question(
     # If the history was newest-to-oldest, we'd reverse it. But given the previous log,
     # if passing 1676 returns 1677, 1678, it's chronological (oldest to newest).
     # So we don't need to reverse.
-    concatenated_content = "\n".join(customer_messages)
+    concatenated_content = "\n".join(m["content"] for m in customer_messages)
 
     logger.info(
         "Checking question for conversation %s: %s",
@@ -512,16 +515,21 @@ def task_check_question(
         concatenated_content,
     )
 
-    # 4. Check if question
-    check_response = check_question(concatenated_content)
+    # 4. Check if question (pass structured messages with IDs for identification)
+    check_response = check_question(customer_messages)
 
     if not check_response:
         logger.error("check_question API returned no response for %s", conversation_id)
         return
 
     try:
-        is_question = check_response.json().get("output")
-        logger.info("AI check_question result for %s: %s", conversation_id, is_question)
+        check_result = check_response.json()
+        is_question = check_result.get("output")
+        support_msg_id = check_result.get("support_msg_id")
+        logger.info(
+            "AI check_question result for %s: output=%s, support_msg_id=%s",
+            conversation_id, is_question, support_msg_id,
+        )
         if is_question != "true":
             logger.info(
                 "Message evaluated as NOT a question. Aborting agent check for %s",
@@ -574,7 +582,7 @@ def task_check_question(
         "bot_id": bot_id,
         "media_url": data.get("media_url"),
         "message_type": data.get("message_type", "text"),
-        "platform_msg_id": data.get("platform_msg_id"),
+        "platform_msg_id": support_msg_id or data.get("platform_msg_id"),
     }
 
     check_agent_answer.apply_async(

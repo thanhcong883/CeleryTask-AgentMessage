@@ -422,17 +422,20 @@ Chat history:
         return None
 
 
-def check_question(content: str) -> Optional[requests.Response]:
+def check_question(messages: list) -> Optional[requests.Response]:
     """
-    Check if a question needs agent processing.
+    Check if messages contain a question/request that needs agent processing,
+    and identify which specific message most needs support.
 
     Args:
-        content: Question content to check
+        messages: List of dicts with 'id' (platform_msg_id) and 'content' keys.
 
     Returns:
-        Response object if successful, None otherwise
+        Response object with {"output": "true"/"false", "support_msg_id": "<id>"} if successful,
+        None otherwise.
     """
     import os
+    import json
 
     try:
         from openai import OpenAI
@@ -449,15 +452,24 @@ def check_question(content: str) -> Optional[requests.Response]:
             api_key=os.environ.get("ARK_API_KEY"),
         )
 
+        # Format messages as structured list for LLM
+        formatted_msgs = json.dumps(messages, ensure_ascii=False)
+
         system_prompt = """You are a strict binary classifier.
 
 Task:
-Determine whether the following input (which may be multiple messages
-concatenated with newlines from the same user within a short time window)
-contains a QUESTION or REQUEST that expects a response, help, or action.
+You receive a list of messages (JSON array) from the same user within
+a short time window. Each message has an "id" (platform message ID)
+and "content" (text).
+
+Determine whether the messages contain a QUESTION or REQUEST that
+expects a response, help, or action.
+
+If TRUE, also identify which specific message MOST needs support
+(the one that is the core question or request).
 
 
-RETURN TRUE if the message:
+RETURN TRUE if any message matches:
 
    A. EXPLICIT QUESTION
       - Contains a direct question (with or without a question mark)
@@ -517,7 +529,7 @@ RETURN TRUE if the message:
       - But "[image]" or "[file]" ALONE with no question/request text → FALSE
 
 
-RETURN FALSE if the messages:
+RETURN FALSE if ALL messages are:
 
    A. GREETING / FAREWELL
       - "xin chào", "hi", "bye", "good morning"
@@ -562,33 +574,50 @@ AMBIGUITY RULES:
   "sao vậy ta") should still be classified correctly based on intent.
 
 
+SUPPORT MESSAGE SELECTION:
+When returning TRUE, you MUST also identify the message that MOST
+needs support. Priority:
+1. The message with the most explicit question or request
+2. If multiple questions exist, pick the one that is most actionable
+3. If all messages equally need support, pick the FIRST one
+
+
 OUTPUT:
-Return ONLY:
-- true
+Return ONLY one of the following formats:
+- true|<id>
+  where <id> is the "id" of the message that MOST needs support
 - false
 
 Do NOT explain.
 Do NOT add text."""
 
         response = client.chat.completions.create(
-            # Specify the Ark Inference Point ID that you created, which has been changed for you here to your Endpoint ID
             model="ep-20260306171113-dqqlf",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"Messages (may contain multiple messages separated by newlines):\n\n{content}",
+                    "content": f"Messages:\n{formatted_msgs}",
                 },
             ],
             temperature=0.0,
         )
 
-        output_text = response.choices[0].message.content.strip().lower()
-        output_val = "true" if "true" in output_text else "false"
+        output_text = response.choices[0].message.content.strip()
+        output_lower = output_text.lower()
+
+        if "true" in output_lower:
+            output_val = "true"
+            # Extract support message ID from format "true|<id>"
+            parts = output_text.split("|", 1)
+            support_msg_id = parts[1].strip() if len(parts) > 1 else None
+        else:
+            output_val = "false"
+            support_msg_id = None
 
         class _DummyResponse:
             def json(self):
-                return {"output": output_val}
+                return {"output": output_val, "support_msg_id": support_msg_id}
 
         return _DummyResponse()
     except Exception as e:

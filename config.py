@@ -30,7 +30,7 @@ STRAPI_UPDATE_MESSAGE: str = f"{STRAPI_API_BASE}/agent-chat-box/webhook/message-
 STRAPI_SYNC_MESSAGE: str = f"{STRAPI_API_BASE}/agent-chat-box/webhook/sync-message"
 STRAPI_GET_CONVERSATION: str = f"{STRAPI_API_BASE}/agent-chat-box/webhook/conversation"
 STRAPI_GET_HISTORY_MESSAGE: str = (
-    f"{STRAPI_API_BASE}/agent-chat-box/webhook/conversation/{{conversation_id}}/messages?mess_Id={{message_id}}&limit={{limit}}"
+    f"{STRAPI_API_BASE}/agent-chat-box/webhook/conversation/{{conversation_id}}/messages?messId={{message_id}}&limit={{limit}}"
 )
 STRAPI_SAVE_MESSAGE_BOT_SENT: str = (
     f"{STRAPI_API_BASE}/agent-chat-box/webhook/bot-reply"
