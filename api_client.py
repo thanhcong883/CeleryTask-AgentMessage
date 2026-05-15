@@ -376,8 +376,16 @@ OUTPUT:
 Return ONLY one of the following formats:
 - true
 - false|<id>
-  where <id> is the "id" of the customer message that most needs support.
-  If the question spans multiple messages, use the "id" of the FIRST question message.
+  where <id> is the "id" of the customer message that MOST needs support.
+
+MESSAGE SELECTION for <id>:
+- Pick the message with the most explicit question, request, or problem report.
+- Do NOT pick greetings ("xin chào", "hello", "hi"), pure acknowledgements,
+  or pure statements. These never need support.
+- If multiple messages need support, pick the most actionable one
+  (e.g., "fix hộ với" over "mạng đang bị lỗi", because the request is more
+  explicit than the problem report).
+- Only pick a greeting or statement if it is the ONLY customer message.
 
 Do NOT explain.
 Do NOT add text."""

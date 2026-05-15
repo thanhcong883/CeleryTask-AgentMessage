@@ -234,12 +234,20 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     if response_data.get("output") == "false":
         logger.info("Agent could not answer, notifying human agents")
         # Use the message ID identified by the LLM as needing support for reply
+        original_msg_id = data.get("platform_msg_id")
         reply_msg_id = response_data.get("reply_to_msg_id")
+        logger.info(
+            "Reply target: original_platform_msg_id=%s, LLM_reply_to_msg_id=%s",
+            original_msg_id, reply_msg_id,
+        )
         if reply_msg_id:
             data["platform_msg_id"] = reply_msg_id
             logger.info(
-                "LLM identified message %s as needing support", reply_msg_id
+                "LLM overrode reply target to message %s", reply_msg_id
             )
+        logger.info(
+            "Final reply_to platform_msg_id=%s", data.get("platform_msg_id")
+        )
         _notify_admins_and_customer(data)
 
 
