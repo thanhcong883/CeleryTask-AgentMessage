@@ -60,17 +60,25 @@ async def universal_hook(
         is_group = body.get("isGroup", False)
         msg_type = "group" if is_group else "private"
 
-        # raw_data.content can be a dict for media messages (chat.photo,
-        # share.file, ...). Only treat it as `content` when it is already a
-        # string (plain text messages); for media we start with "" and let
-        # the media block below set it from description/title if present.
+        # raw_data.content can be a dict for media/link messages (chat.photo,
+        # share.file, link preview, ...). Only treat it as `content` when it
+        # is already a string (plain text messages); for media we start with
+        # "" and let the media block below set it from description/title.
+        # For link messages, extract readable text from the content dict.
         _raw_content = raw_data.get("content")
         if isinstance(_raw_content, str):
             content = _raw_content
-        elif isinstance(body.get("text"), str) and not isinstance(_raw_content, dict):
-            content = body.get("text")
+        elif isinstance(_raw_content, dict):
+            # Link/media messages: prefer description (user text) > title > href
+            content = (
+                _raw_content.get("description")
+                or _raw_content.get("title")
+                or _raw_content.get("href")
+                or body.get("text")
+                or ""
+            )
         else:
-            content = ""
+            content = body.get("text") or ""
         sender_id = raw_data.get("uidFrom") or body.get("from")
         name = raw_data.get("dName") or body.get("from")
         conv_id = body.get("threadId") or raw_data.get("idTo")
