@@ -180,7 +180,7 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
         first_msg_id,
         message_id,
     )
-    history = get_message_history(str(conversation_id), str(first_msg_id))
+    history = get_message_history(str(conversation_id), str(first_msg_id), limit=10)
     if history is None:
         logger.warning(
             "No message history found for conversation %s from first_msg_id=%s",
@@ -233,6 +233,13 @@ def check_agent_answer(data: Dict[str, Any]) -> None:
     # If agent cannot answer, notify admins
     if response_data.get("output") == "false":
         logger.info("Agent could not answer, notifying human agents")
+        # Use the message ID identified by the LLM as needing support for reply
+        reply_msg_id = response_data.get("reply_to_msg_id")
+        if reply_msg_id:
+            data["platform_msg_id"] = reply_msg_id
+            logger.info(
+                "LLM identified message %s as needing support", reply_msg_id
+            )
         _notify_admins_and_customer(data)
 
 
@@ -275,7 +282,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
                 args=(admin_payload, "bot"), queue="celery_send_message"
             )
 
-    # Notify customer
+    # Notify customer (reply to the specific message that triggered the agent)
     customer_payload = {
         "type": data.get("type"),
         "group_id": data.get("group_id"),
@@ -285,6 +292,7 @@ def _notify_admins_and_customer(data: Dict[str, Any]) -> None:
         "token": token,
         "user_id": data.get("user_id"),
         "bot_id": data.get("bot_id"),
+        "reply_to": data.get("platform_msg_id"),
     }
     logger.info("Customer payload: %s", customer_payload)
     send_message.apply_async(
@@ -409,10 +417,10 @@ def process_message(data: Dict[str, Any]) -> None:
         message_id,
     )
 
-    # Schedule task_check_question after 60 seconds (1 minute window)
+    # Schedule task_check_question after 120 seconds (2 minute window)
     task_check_question.apply_async(
         args=(data, str(conversation_id), str(message_id), conversation_info),
-        countdown=60,
+        countdown=120,
     )
 
 
@@ -423,7 +431,7 @@ def task_check_question(
     message_id: str,
     conversation_info: Dict[str, Any],
 ) -> None:
-    """Task to evaluate concatenated recent messages after a 1-minute debounce window."""
+    """Task to evaluate concatenated recent messages after a 2-minute debounce window."""
 
     # 1. Check debounce
     latest_msg_id = redis_client.get(f"latest_user_message:{conversation_id}")
@@ -453,7 +461,7 @@ def task_check_question(
     # Delete the key so the next batch can start fresh
     redis_client.delete(first_msg_key)
 
-    history = get_message_history(str(conversation_id), str(first_msg_id))
+    history = get_message_history(str(conversation_id), str(first_msg_id), limit=10)
     if not history:
         logger.warning(
             "No message history found for %s starting at %s",
@@ -566,6 +574,7 @@ def task_check_question(
         "bot_id": bot_id,
         "media_url": data.get("media_url"),
         "message_type": data.get("message_type", "text"),
+        "platform_msg_id": data.get("platform_msg_id"),
     }
 
     check_agent_answer.apply_async(

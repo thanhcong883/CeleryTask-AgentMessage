@@ -172,20 +172,21 @@ def get_conversation_members(conversation_id: str) -> Optional[List[Dict[str, An
 
 
 def get_message_history(
-    conversation_id: str, message_id: str
+    conversation_id: str, message_id: str, limit: int = 20
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch message history for a conversation.
 
     Args:
         conversation_id: The conversation ID
-        message_id: The message ID
+        message_id: The message ID to start from
+        limit: Maximum number of messages to fetch
 
     Returns:
         List of messages if successful, None otherwise
     """
     url = config.STRAPI_GET_HISTORY_MESSAGE.format(
-        conversation_id=conversation_id, message_id=message_id
+        conversation_id=conversation_id, message_id=message_id, limit=limit
     )
     response = api_get(url, headers=config.HEADERS_API_BACKEND)
     if response:
@@ -347,21 +348,36 @@ PARTIAL HANDLING RULES:
   intent to handle it, it is considered VALID
 
 
+FAST-PATH RULE (check this FIRST, before anything else):
+- If ANY message in the chat history has role "admin" or "bot",
+  immediately return true. The question is already being handled.
+  Do NOT analyze further.
+
+
 INSTRUCTIONS:
-- Each message in the chat history has: "role" (customer/admin/bot),
-  "sender_name" (name of the sender), "content", and "datetime".
-- Identify the person who asked the question using sender_name.
-- Ignore all messages sent by that same sender_name.
-- Compare the question with EACH remaining message in the chat history.
+- Each message in the chat history has: "id" (platform message ID),
+  "role" (customer/admin/bot), "sender_name" (name of the sender),
+  "content", and "datetime".
+- The "Question" provided above is the EXACT question you must evaluate.
+  Do NOT evaluate any other questions found in the chat history.
+- SCOPE: Only consider messages that appear AFTER the question
+  in chronological order (by datetime). Messages that appear BEFORE
+  the question are old context and must be IGNORED entirely.
+- Identify the person who asked the question using sender_name AND role.
+- Ignore all messages sent by that same sender_name with the same role.
+- Compare the question with EACH remaining in-scope message.
 - Apply EXCLUSION RULES first to filter out invalid messages.
 - Then check if any remaining message satisfies at least one condition (A to E).
 - If ANY message qualifies as a VALID HANDLING, return true.
-- If NONE qualify, return false.
+- If NONE qualify, return false with the "id" of the customer message
+  that most needs support.
 
 OUTPUT:
-Return ONLY:
+Return ONLY one of the following formats:
 - true
-- false
+- false|<id>
+  where <id> is the "id" of the customer message that most needs support.
+  If the question spans multiple messages, use the "id" of the FIRST question message.
 
 Do NOT explain.
 Do NOT add text."""
@@ -381,12 +397,24 @@ Chat history:
             temperature=0.0,
         )
 
-        output_text = response.choices[0].message.content.strip().lower()
-        output_val = "true" if "true" in output_text else "false"
+        output_text = response.choices[0].message.content.strip()
+        output_lower = output_text.lower()
+
+        if "true" in output_lower:
+            output_val = "true"
+            reply_msg_id = None
+        else:
+            output_val = "false"
+            # Extract message ID from format "false|<id>"
+            parts = output_text.split("|", 1)
+            reply_msg_id = parts[1].strip() if len(parts) > 1 else None
 
         class _DummyResponse:
             def json(self):
-                return {"output": output_val}
+                resp = {"output": output_val}
+                if reply_msg_id:
+                    resp["reply_to_msg_id"] = reply_msg_id
+                return resp
 
         return _DummyResponse()
     except Exception as e:
@@ -424,8 +452,9 @@ def check_question(content: str) -> Optional[requests.Response]:
         system_prompt = """You are a strict binary classifier.
 
 Task:
-Determine whether the following message is a QUESTION or REQUEST that expects
-a response, help, or action.
+Determine whether the following input (which may be multiple messages
+concatenated with newlines from the same user within a short time window)
+contains a QUESTION or REQUEST that expects a response, help, or action.
 
 
 RETURN TRUE if the message:
@@ -482,8 +511,13 @@ RETURN TRUE if the message:
         - "@admin hệ thống đang lỗi"
         - "@team check giúp với"
 
+   H. MEDIA WITH CONTEXT
+      - A message containing "[image]" or "[file]" that is accompanied by
+        a question or request in the same batch → TRUE
+      - But "[image]" or "[file]" ALONE with no question/request text → FALSE
 
-RETURN FALSE if the message:
+
+RETURN FALSE if the messages:
 
    A. GREETING / FAREWELL
       - "xin chào", "hi", "bye", "good morning"
@@ -543,7 +577,7 @@ Do NOT add text."""
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"Message:\n\n{content}",
+                    "content": f"Messages (may contain multiple messages separated by newlines):\n\n{content}",
                 },
             ],
             temperature=0.0,
@@ -619,6 +653,7 @@ def build_history_chat(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         result.append(
             {
+                "id": msg.get("platform_msg_id", ""),
                 "role": msg.get("sender_type"),
                 "sender_name": msg.get("sender_name", ""),
                 "content": content,
