@@ -226,8 +226,11 @@ async def universal_hook(
         # carries the caption (and is the actual decryptable document).
         doc_wrap = (wa_msg.get("documentWithCaptionMessage") or {}).get("message") or {}
         doc_wrap_doc = doc_wrap.get("documentMessage") or {}
+        # Prefer data.text which has resolved @mentions (display names instead of phone numbers).
+        # Fall back to raw message fields for media captions or older webhook formats.
         content_text = (
-            wa_msg.get("conversation")
+            data_field.get("text")
+            or wa_msg.get("conversation")
             or ext_text.get("text")
             or img.get("caption")
             or vid.get("caption")
@@ -235,7 +238,6 @@ async def universal_hook(
             or doc_wrap_doc.get("caption")
             or raw_data.get("content")
             or body.get("text")
-            or data_field.get("text")
         )
 
         if is_group:
