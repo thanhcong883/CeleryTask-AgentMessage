@@ -64,19 +64,31 @@ async def universal_hook(
         # share.file, link preview, ...). Only treat it as `content` when it
         # is already a string (plain text messages); for media we start with
         # "" and let the media block below set it from description/title.
-        # For link messages, extract readable text from the content dict.
+        # For link messages, extract readable text AND the href URL.
         _raw_content = raw_data.get("content")
+        msg_type_zalo = raw_data.get("msgType")
+        _is_media_msg = msg_type_zalo in ["share.file", "chat.photo", "chat.video", "chat.voice"]
         if isinstance(_raw_content, str):
             content = _raw_content
         elif isinstance(_raw_content, dict):
-            # Link/media messages: prefer description (user text) > title > href
-            content = (
-                _raw_content.get("description")
-                or _raw_content.get("title")
-                or _raw_content.get("href")
-                or body.get("text")
-                or ""
-            )
+            if _is_media_msg:
+                # Media messages: only use description/title as caption.
+                # Do NOT fall back to href — that's the media download URL and
+                # would cause the raw link to display alongside the image/video.
+                content = (
+                    _raw_content.get("description")
+                    or _raw_content.get("title")
+                    or ""
+                )
+            else:
+                # Link messages: include both description/title AND the href URL
+                # so the actual link is preserved in storage.
+                _desc = _raw_content.get("description") or _raw_content.get("title") or ""
+                _href = _raw_content.get("href") or ""
+                if _desc and _href:
+                    content = f"{_desc}\n{_href}"
+                else:
+                    content = _desc or _href or body.get("text") or ""
         else:
             content = body.get("text") or ""
         sender_id = raw_data.get("uidFrom") or body.get("from")
@@ -93,7 +105,7 @@ async def universal_hook(
 
         message_type = "text"
         media_url: Optional[str] = None
-        msg_type_zalo = raw_data.get("msgType")
+        # msg_type_zalo already extracted above for content parsing
         if msg_type_zalo in ["share.file", "chat.photo", "chat.video", "chat.voice"]:
             import json
             from urllib.parse import urlparse
