@@ -81,14 +81,20 @@ async def universal_hook(
                     or ""
                 )
             else:
-                # Link messages: include both description/title AND the href URL
-                # so the actual link is preserved in storage.
-                _desc = _raw_content.get("description") or _raw_content.get("title") or ""
+                # Link messages (chat.recommended, etc.):
+                # `title` = user's original typed text (URL + any extra text)
+                # `description` = auto-generated link preview text
+                # `href` = the extracted URL
+                # Prioritize title (user's actual input) over description.
+                _user_text = _raw_content.get("title") or ""
+                _desc = _raw_content.get("description") or ""
                 _href = _raw_content.get("href") or ""
-                if _desc and _href:
-                    content = f"{_desc}\n{_href}"
-                else:
-                    content = _desc or _href or body.get("text") or ""
+                content = _user_text or _desc
+                # Append href if not already contained in the text
+                if _href and _href not in content:
+                    content = f"{content}\n{_href}" if content else _href
+                if not content:
+                    content = body.get("text") or ""
         else:
             content = body.get("text") or ""
         sender_id = raw_data.get("uidFrom") or body.get("from")
